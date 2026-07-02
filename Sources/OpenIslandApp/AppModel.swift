@@ -673,6 +673,9 @@ final class AppModel {
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
+        codexAppServer.onUsageSnapshot = { [weak self] snapshot in
+            self?.hooks.codexUsageSnapshot = snapshot
+        }
         codexAppServer.isSessionTracked = { [weak self] id in
             self?.state.session(id: id) != nil
         }
@@ -1487,14 +1490,24 @@ final class AppModel {
         }()
 
         // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
+        // back to running. The bridge's sessionCompleted is authoritative for
+        // CLI sessions; Codex.app is different because one desktop thread can
+        // keep appending assistant progress and tool calls after a coarse idle
+        // or turn-level completion event.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
-            return
+           let existing = state.session(id: payload.sessionID),
+           existing.phase == .completed {
+            let isRevivingOpenCodexAppThread = existing.tool == .codex
+                && !existing.isSessionEnded
+                && (existing.isCodexAppSession || existing.jumpTarget?.terminalApp == "Codex.app")
+            if isRevivingOpenCodexAppThread {
+                // Let the rollout watcher correct false "done" states while
+                // the Codex Desktop thread is still actively writing events.
+            } else {
+                return
+            }
         }
 
         state.apply(event)

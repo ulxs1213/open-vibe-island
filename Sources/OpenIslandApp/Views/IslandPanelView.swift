@@ -97,9 +97,8 @@ struct IslandPanelView: View {
     private static let headerControlSpacing: CGFloat = 8
     private static let headerHorizontalPadding: CGFloat = 18
     private static let headerTopPadding: CGFloat = 2
-    private static let notchHeaderHorizontalPadding: CGFloat = 46
-    private static let notchLaneSafetyInset: CGFloat = 12
-    private static let minimumRightUsageLaneWidth: CGFloat = 58
+    private static let notchHeaderHorizontalPadding: CGFloat = 18
+    private static let notchLaneSafetyInset: CGFloat = 24
 
     var model: AppModel
     private var lang: LanguageManager { model.lang }
@@ -157,10 +156,6 @@ struct IslandPanelView: View {
         }
         // Fallback when diagnostics haven't been populated yet.
         return (targetOverlayScreen?.safeAreaInsets.top ?? 0) == 0
-    }
-
-    private var openedHeaderButtonsWidth: CGFloat {
-        (Self.headerControlButtonSize * 3) + (Self.headerControlSpacing * 2)
     }
 
     private var openedHeaderHorizontalPadding: CGFloat {
@@ -273,15 +268,18 @@ struct IslandPanelView: View {
     private func v6ClosedSurface() -> some View {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
-        V6ClosedPill(
-            mode: model.islandClosedMode,
-            label: layout == .external ? model.islandClosedLabel() : nil,
-            rightSlot: model.islandClosedRightSlotContent(),
-            layout: layout,
-            height: closedNotchHeight,
-            physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
-        )
+        TimelineView(.periodic(from: Date(), by: 60)) { timeline in
+            V6ClosedPill(
+                mode: model.islandClosedMode,
+                label: layout == .external ? model.islandClosedLabel() : nil,
+                leftStatusText: layout == .macbook ? closedCodexFiveHourUsageText(now: timeline.date) : nil,
+                rightSlot: model.islandClosedRightSlotContent(),
+                layout: layout,
+                height: closedNotchHeight,
+                physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
+                minWidth: 70
+            )
+        }
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
     }
@@ -334,6 +332,25 @@ struct IslandPanelView: View {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
     }
 
+    private func closedCodexFiveHourUsageText(now: Date) -> String? {
+        guard model.showCodexUsage,
+              let snapshot = model.codexUsageSnapshot,
+              let window = snapshot.windows.first(where: { $0.key == "primary" }),
+              window.isPercentageReliable else {
+            return nil
+        }
+
+        let remainingPercentage = Int(max(0, min(100, window.leftPercentage)).rounded())
+        var parts = ["\(remainingPercentage)%"]
+
+        if let resetsAt = window.resetsAt,
+           let remaining = remainingDurationString(until: resetsAt, now: now) {
+            parts.append(remaining)
+        }
+
+        return parts.joined(separator: " ")
+    }
+
     @ViewBuilder
     private var openedHeaderContent: some View {
         if usesNotchAwareOpenedHeader {
@@ -343,31 +360,23 @@ struct IslandPanelView: View {
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
                 HStack(spacing: 0) {
-                    usageLaneView(providerGroups.left, alignment: .leading)
-                        .frame(width: metrics.leftUsageWidth, alignment: .leading)
+                    usageLaneView(providerGroups.left, alignment: .trailing)
+                        .frame(width: metrics.leftUsageWidth, alignment: .trailing)
+                        .clipped()
 
                     Color.clear
                         .frame(width: metrics.centerGapWidth)
 
-                    HStack(spacing: Self.headerControlSpacing) {
-                        if metrics.rightUsageWidth > 0, !providerGroups.right.isEmpty {
-                            usageLaneView(providerGroups.right, alignment: .trailing)
-                                .frame(width: metrics.rightUsageWidth, alignment: .trailing)
-                        }
-                        openedHeaderButtons
-                    }
-                    .frame(width: metrics.rightLaneWidth, alignment: .trailing)
+                    usageLaneView(providerGroups.right, alignment: .leading)
+                        .frame(width: metrics.rightUsageWidth, alignment: .leading)
+                        .clipped()
                 }
                 .padding(.horizontal, openedHeaderHorizontalPadding)
                 .padding(.top, Self.headerTopPadding)
             }
         } else {
-            HStack(spacing: 12) {
-                openedUsageSummary
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                openedHeaderButtons
-            }
+            openedUsageSummary
+                .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, openedHeaderHorizontalPadding)
             .padding(.trailing, openedHeaderHorizontalPadding)
             .padding(.top, Self.headerTopPadding)
@@ -703,8 +712,10 @@ struct IslandPanelView: View {
                 sessionOverviewView(overview, compact: false)
                 sessionOverviewView(overview, compact: true)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 0)
+            openedHeaderButtons
+                .fixedSize()
         }
         .padding(.leading, sessionListSideInset)
         .padding(.trailing, sessionListSideInset)
@@ -850,8 +861,9 @@ struct IslandPanelView: View {
 
         if providers.isEmpty == false {
             ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
+                compactUsageSummaryView(providers, usesShortTitles: false, detailStyle: .full)
+                compactUsageSummaryView(providers, usesShortTitles: true, detailStyle: .compact)
+                compactUsageSummaryView(providers, usesShortTitles: true, detailStyle: .minimal)
             }
         } else {
             Color.clear
@@ -875,6 +887,7 @@ struct IslandPanelView: View {
                         id: "claude-5h",
                         label: "5h",
                         usedPercentage: fiveHour.usedPercentage,
+                        isPercentageReliable: true,
                         resetsAt: fiveHour.resetsAt
                     )
                 )
@@ -886,6 +899,7 @@ struct IslandPanelView: View {
                         id: "claude-7d",
                         label: "7d",
                         usedPercentage: sevenDay.usedPercentage,
+                        isPercentageReliable: true,
                         resetsAt: sevenDay.resetsAt
                     )
                 )
@@ -910,6 +924,7 @@ struct IslandPanelView: View {
                     id: "codex-\(window.key)",
                     label: window.label,
                     usedPercentage: window.usedPercentage,
+                    isPercentageReliable: window.isPercentageReliable,
                     resetsAt: window.resetsAt
                 )
             }
@@ -935,7 +950,21 @@ struct IslandPanelView: View {
         case 0:
             return ([], [])
         case 1:
-            return ([providers[0]], [])
+            let provider = providers[0]
+            if provider.id == "codex", provider.windows.count >= 2 {
+                let leftProvider = UsageProviderPresentation(
+                    id: "\(provider.id)-left",
+                    title: provider.title,
+                    windows: [provider.windows[0]]
+                )
+                let rightProvider = UsageProviderPresentation(
+                    id: "\(provider.id)-right",
+                    title: provider.title,
+                    windows: Array(provider.windows.dropFirst())
+                )
+                return ([leftProvider], [rightProvider])
+            }
+            return ([provider], [])
         case 2:
             return ([providers[0]], [providers[1]])
         default:
@@ -957,8 +986,9 @@ struct IslandPanelView: View {
                 .frame(maxWidth: .infinity)
         } else {
             ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
+                compactUsageSummaryView(providers, usesShortTitles: false, detailStyle: .full)
+                compactUsageSummaryView(providers, usesShortTitles: true, detailStyle: .compact)
+                compactUsageSummaryView(providers, usesShortTitles: true, detailStyle: .minimal)
             }
             .frame(maxWidth: .infinity, alignment: alignment)
         }
@@ -969,13 +999,12 @@ struct IslandPanelView: View {
         let contentWidth = max(0, totalWidth - (horizontalPadding * 2))
         guard usesNotchAwareOpenedHeader,
               let screen = targetOverlayScreen else {
-            let rightLaneWidth = min(contentWidth, openedHeaderButtonsWidth + (contentWidth / 2))
-            let leftUsageWidth = max(0, contentWidth - rightLaneWidth)
+            let leftUsageWidth = contentWidth / 2
+            let rightUsageWidth = max(0, contentWidth - leftUsageWidth)
             return OpenedHeaderMetrics(
                 leftUsageWidth: leftUsageWidth,
                 centerGapWidth: 0,
-                rightUsageWidth: max(0, rightLaneWidth - openedHeaderButtonsWidth - Self.headerControlSpacing),
-                rightLaneWidth: rightLaneWidth
+                rightUsageWidth: rightUsageWidth
             )
         }
 
@@ -994,36 +1023,24 @@ struct IslandPanelView: View {
         let rawRightWidth = max(0, contentMaxX - max(contentMinX, rightVisibleMinX))
 
         let leftUsageWidth = max(0, rawLeftWidth - Self.notchLaneSafetyInset)
-        let rightAvailableWidth = max(0, rawRightWidth - Self.notchLaneSafetyInset)
-        let proposedRightUsageWidth = max(
-            0,
-            rightAvailableWidth - openedHeaderButtonsWidth - Self.headerControlSpacing
-        )
-        let rightUsageWidth = proposedRightUsageWidth >= Self.minimumRightUsageLaneWidth
-            ? proposedRightUsageWidth
-            : 0
-        let rightLaneWidth = min(
-            contentWidth,
-            openedHeaderButtonsWidth
-                + (rightUsageWidth > 0 ? Self.headerControlSpacing + rightUsageWidth : 0)
-        )
-        let centerGapWidth = max(0, contentWidth - leftUsageWidth - rightLaneWidth)
+        let rightUsageWidth = max(0, rawRightWidth - Self.notchLaneSafetyInset)
+        let centerGapWidth = max(0, contentWidth - leftUsageWidth - rightUsageWidth)
 
         return OpenedHeaderMetrics(
             leftUsageWidth: leftUsageWidth,
             centerGapWidth: centerGapWidth,
-            rightUsageWidth: rightUsageWidth,
-            rightLaneWidth: rightLaneWidth
+            rightUsageWidth: rightUsageWidth
         )
     }
 
     private func compactUsageSummaryView(
         _ providers: [UsageProviderPresentation],
-        usesShortTitles: Bool
+        usesShortTitles: Bool,
+        detailStyle: UsageDetailStyle
     ) -> some View {
         HStack(spacing: 7) {
             ForEach(providers) { provider in
-                compactUsageChip(provider, usesShortTitle: usesShortTitles)
+                compactUsageChip(provider, usesShortTitle: usesShortTitles, detailStyle: detailStyle)
             }
         }
         .lineLimit(1)
@@ -1039,40 +1056,83 @@ struct IslandPanelView: View {
         return screen.localizedName
     }
 
-    private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
-        HStack(spacing: 5) {
-            Text(usesShortTitle ? provider.shortTitle : provider.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.74))
-
-            Text(provider.peakWindowLabel)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
-
-            Text("\(provider.peakUsagePercentage)%")
-                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
+    private func compactUsageChip(
+        _ provider: UsageProviderPresentation,
+        usesShortTitle: Bool,
+        detailStyle: UsageDetailStyle
+    ) -> some View {
+        TimelineView(.periodic(from: Date(), by: 60)) { timeline in
+            compactUsageChipContent(
+                provider,
+                usesShortTitle: usesShortTitle,
+                detailStyle: detailStyle,
+                now: timeline.date
+            )
         }
-        .padding(.horizontal, 8)
+    }
+
+    private func compactUsageChipContent(
+        _ provider: UsageProviderPresentation,
+        usesShortTitle: Bool,
+        detailStyle: UsageDetailStyle,
+        now: Date
+    ) -> some View {
+        HStack(spacing: detailStyle.itemSpacing) {
+            if !provider.hidesCompactTitle {
+                Text(usesShortTitle ? provider.shortTitle : provider.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.74))
+            }
+
+            ForEach(provider.windows) { window in
+                compactUsageWindow(window, detailStyle: detailStyle, now: now)
+            }
+        }
+        .padding(.horizontal, detailStyle.horizontalPadding)
         .padding(.vertical, 4)
         .background(.white.opacity(0.055), in: Capsule())
         .overlay(
             Capsule()
                 .strokeBorder(.white.opacity(0.06), lineWidth: 1)
         )
-        .help(usageHelpText(for: provider))
+        .help(usageHelpText(for: provider, now: now))
     }
 
-    private func usageHelpText(for provider: UsageProviderPresentation) -> String {
+    private func usageHelpText(for provider: UsageProviderPresentation, now: Date) -> String {
         provider.windows.map { window in
-            var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
+            var parts = [window.isPercentageReliable
+                ? "left \(window.roundedRemainingPercentage)%"
+                : "usage unavailable"]
             if let resetsAt = window.resetsAt,
-               let remaining = remainingDurationString(until: resetsAt) {
-                parts.append(remaining)
+               let remaining = remainingDurationString(until: resetsAt, now: now) {
+                parts.append("resets in \(remaining)")
             }
             return parts.joined(separator: " ")
         }
         .joined(separator: " · ")
+    }
+
+    private func compactUsageWindow(
+        _ window: UsageWindowPresentation,
+        detailStyle: UsageDetailStyle,
+        now: Date
+    ) -> some View {
+        HStack(spacing: detailStyle.windowSpacing) {
+            Text(window.remainingPercentageText)
+                .font(.system(size: detailStyle.valueFontSize, weight: .bold, design: .monospaced))
+                .foregroundStyle(window.isPercentageReliable ? usageColor(for: window.usedPercentage) : .white.opacity(0.46))
+
+            if detailStyle.showsResetCountdown,
+               let resetsAt = window.resetsAt,
+               let remaining = remainingDurationString(until: resetsAt, now: now) {
+                Text(remaining)
+                    .font(.system(size: detailStyle.countdownFontSize, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+        }
+        .lineLimit(1)
     }
 
     private func headerPill(_ title: String, tint: Color) -> some View {
@@ -1095,27 +1155,84 @@ struct IslandPanelView: View {
         }
     }
 
-    private func remainingDurationString(until date: Date) -> String? {
-        let interval = date.timeIntervalSinceNow
+    private func remainingDurationString(until date: Date, now: Date) -> String? {
+        let interval = date.timeIntervalSince(now)
         guard interval > 0 else {
             return nil
         }
 
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
+        let totalMinutes = max(1, Int(ceil(interval / 60)))
+        let days = totalMinutes / 1_440
+        let hours = (totalMinutes % 1_440) / 60
+        let minutes = totalMinutes % 60
 
-        if interval >= 86_400 {
-            formatter.allowedUnits = [.day]
-            formatter.maximumUnitCount = 1
-        } else if interval >= 3_600 {
-            formatter.allowedUnits = [.hour, .minute]
-            formatter.maximumUnitCount = 2
-        } else {
-            formatter.allowedUnits = [.minute]
-            formatter.maximumUnitCount = 1
+        if days > 0 {
+            return hours > 0 ? "\(days)d\(hours)h" : "\(days)d"
         }
 
-        return formatter.string(from: interval)
+        if hours > 0 {
+            return minutes > 0 ? "\(hours)h\(minutes)m" : "\(hours)h"
+        }
+
+        return "\(minutes)m"
+    }
+}
+
+private enum UsageDetailStyle {
+    case full
+    case compact
+    case minimal
+
+    var showsResetCountdown: Bool {
+        true
+    }
+
+    var horizontalPadding: CGFloat {
+        switch self {
+        case .full:
+            11
+        case .compact:
+            10
+        case .minimal:
+            9
+        }
+    }
+
+    var itemSpacing: CGFloat {
+        switch self {
+        case .full:
+            8
+        case .compact:
+            7
+        case .minimal:
+            6
+        }
+    }
+
+    var windowSpacing: CGFloat {
+        switch self {
+        case .full:
+            5
+        case .compact:
+            4
+        case .minimal:
+            3
+        }
+    }
+
+    var countdownFontSize: CGFloat {
+        switch self {
+        case .full:
+            10.8
+        case .compact:
+            10.4
+        case .minimal:
+            10
+        }
+    }
+
+    var valueFontSize: CGFloat {
+        self == .minimal ? 11.5 : 12
     }
 }
 
@@ -1143,14 +1260,19 @@ private struct UsageProviderPresentation: Identifiable {
     }
 
     var shortTitle: String {
-        switch id {
-        case "claude":
-            "Cl"
-        case "codex":
-            "Cx"
-        default:
-            String(title.prefix(2))
+        if id == "claude" {
+            return "Cl"
         }
+
+        if id.hasPrefix("codex") {
+            return "Cx"
+        }
+
+        return String(title.prefix(2))
+    }
+
+    var hidesCompactTitle: Bool {
+        id.hasPrefix("codex")
     }
 }
 
@@ -1158,10 +1280,23 @@ private struct UsageWindowPresentation: Identifiable {
     let id: String
     let label: String
     let usedPercentage: Double
+    let isPercentageReliable: Bool
     let resetsAt: Date?
 
     var roundedUsedPercentage: Int {
         Int(usedPercentage.rounded())
+    }
+
+    var remainingPercentage: Double {
+        max(0, 100 - usedPercentage)
+    }
+
+    var roundedRemainingPercentage: Int {
+        Int(remainingPercentage.rounded())
+    }
+
+    var remainingPercentageText: String {
+        isPercentageReliable ? "\(roundedRemainingPercentage)%" : "--"
     }
 }
 
@@ -1169,7 +1304,6 @@ private struct OpenedHeaderMetrics {
     let leftUsageWidth: CGFloat
     let centerGapWidth: CGFloat
     let rightUsageWidth: CGFloat
-    let rightLaneWidth: CGFloat
 }
 
 private struct SessionOverviewItem: Identifiable {
@@ -1276,11 +1410,20 @@ private struct IslandSessionRow: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(summaryHeadlineText)
-                    .font(summaryTitleFont)
-                    .foregroundStyle(titleColor(for: presence))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(summaryProjectText)
+                        .font(.system(size: 11.2, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper.opacity(presence == .inactive ? 0.38 : 0.58))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: presentation == .notification ? 128 : 96, alignment: .leading)
+
+                    Text(summaryConversationText)
+                        .font(summaryTitleFont)
+                        .foregroundStyle(titleColor(for: presence))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
 
                 if showsDetail,
                    let promptLine = summaryPromptLineText {
@@ -1302,10 +1445,10 @@ private struct IslandSessionRow: View {
                 if let terminalBadge = session.spotlightTerminalBadge {
                     sideBadge(terminalBadge)
                 }
-                Text(session.spotlightAgeBadge)
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                Text(session.spotlightRuntimeBadge(at: referenceDate))
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(summaryAgeColor(for: presence))
-                    .frame(minWidth: 30, alignment: .trailing)
+                    .frame(minWidth: 48, alignment: .trailing)
                 detailToggleButton(isOpen: showsDetail)
                 if let onDismiss {
                     DismissButton(action: onDismiss)
@@ -1441,6 +1584,18 @@ private struct IslandSessionRow: View {
         }
 
         return session.spotlightHeadlineText
+    }
+
+    private var summaryProjectText: String {
+        if presentation == .notification, session.phase == .completed {
+            return notificationWorkspaceHeadlineText
+        }
+
+        return session.spotlightProjectLabel
+    }
+
+    private var summaryConversationText: String {
+        session.spotlightConversationTitleText ?? summaryHeadlineText
     }
 
     private var notificationWorkspaceHeadlineText: String {

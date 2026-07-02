@@ -570,6 +570,68 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerReopensSessionWhenUserStartsNewTurnAfterCompletion() {
+        let completedSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Build the quota chip.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_complete",
+                    "last_agent_message": "Quota chip installed.",
+                ]
+            ),
+        ])
+        let reopenedSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Build the quota chip.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_complete",
+                    "last_agent_message": "Quota chip installed.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:05:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Fix the status display.",
+                ]
+            ),
+        ])
+        let events = CodexRolloutReducer.events(
+            from: completedSnapshot,
+            to: reopenedSnapshot,
+            sessionID: "codex-session-1",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(reopenedSnapshot.phase == .running)
+        #expect(!reopenedSnapshot.isCompleted)
+        #expect(reopenedSnapshot.lastUserPrompt == "Fix the status display.")
+        #expect(events.contains(where: {
+            $0.trackedActivityUpdate?.phase == .running
+                && $0.trackedActivityUpdate?.summary == "Prompt: Fix the status display."
+        }))
+    }
+
+    @Test
     func codexRolloutReducerMarksUsageLimitMessageAsCompleted() {
         let initialSnapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(

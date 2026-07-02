@@ -111,13 +111,31 @@ extension AgentSession {
     }
 
     var spotlightTerminalBadge: String? {
-        jumpTarget?.terminalApp
+        guard let terminalApp = jumpTarget?.terminalApp else {
+            return nil
+        }
+
+        if tool == .codex && terminalApp == "Codex.app" {
+            return nil
+        }
+
+        return terminalApp
     }
 
     var spotlightWorkspaceName: String {
         if let workspaceName = jumpTarget?.workspaceName.trimmedForSurface,
-           !workspaceName.isEmpty {
+           !workspaceName.isEmpty,
+           workspaceName != "/" {
             return workspaceName
+        }
+
+        if let workingDirectory = jumpTarget?.workingDirectory?.trimmedForSurface,
+           !workingDirectory.isEmpty,
+           workingDirectory != "/" {
+            let derivedName = URL(fileURLWithPath: workingDirectory).lastPathComponent.trimmedForSurface
+            if !derivedName.isEmpty {
+                return derivedName
+            }
         }
 
         let trimmedTitle = title.trimmedForSurface
@@ -168,23 +186,34 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        guard let prompt = spotlightConversationTitleText else {
+            return spotlightProjectLabel
+        }
+
+        return "\(spotlightProjectLabel) · \(prompt)"
+    }
+
+    var spotlightProjectLabel: String {
+        var project = spotlightWorkspaceName
 
         if let branch = spotlightWorktreeBranch {
-            headline += " (\(branch))"
+            project += " (\(branch))"
         }
 
-        guard let prompt = spotlightHeadlinePromptText else {
-            return headline
-        }
+        return project
+    }
 
-        return "\(headline) · \(prompt)"
+    var spotlightConversationTitleText: String? {
+        Self.surfacePromptCandidate(codexMetadata?.threadName)
+            ?? Self.surfacePromptCandidate(initialUserPromptText)
+            ?? Self.surfacePromptCandidate(latestUserPromptText)
+            ?? Self.surfaceSummaryCandidate(summary)
     }
 
     var spotlightHeadlinePromptText: String? {
         // Headline shows the initial prompt (session topic), not the latest.
         // The latest prompt is shown separately in the "You:" line.
-        initialPromptText ?? latestPromptText
+        spotlightConversationTitleText
     }
 
     var spotlightPromptText: String? {
@@ -320,6 +349,17 @@ extension AgentSession {
         return "\(max(1, age / 86_400))d"
     }
 
+    func spotlightRuntimeBadge(at referenceDate: Date) -> String {
+        switch phase {
+        case .running:
+            return "运行\(Self.compactElapsed(from: codexMetadata?.currentTurnStartedAt ?? firstSeenAt, to: referenceDate))"
+        case .waitingForApproval, .waitingForAnswer:
+            return "等待\(Self.compactElapsed(from: codexMetadata?.currentTurnStartedAt ?? updatedAt, to: referenceDate))"
+        case .completed:
+            return "完成\(Self.compactElapsed(from: updatedAt, to: referenceDate))"
+        }
+    }
+
     func islandPresence(at referenceDate: Date) -> IslandSessionPresence {
         if phase == .running {
             return .running
@@ -427,7 +467,7 @@ extension AgentSession {
     }
 
     private var latestPromptText: String? {
-        let prompt = latestUserPromptText?.trimmedForSurface
+        let prompt = Self.surfacePromptCandidate(latestUserPromptText)
         guard let prompt, !prompt.isEmpty else {
             return nil
         }
@@ -437,6 +477,71 @@ extension AgentSession {
 
     private var prefersLivePromptHeadline: Bool {
         isProcessAlive || phase == .running || phase.requiresAttention
+    }
+
+    private static func surfacePromptCandidate(_ value: String?) -> String? {
+        guard var text = value?.trimmedForSurface, !text.isEmpty else {
+            return nil
+        }
+
+        if text.hasPrefix("Prompt:") {
+            text = String(text.dropFirst("Prompt:".count)).trimmedForSurface
+        }
+
+        guard !text.isEmpty, !isInjectedPromptBlock(text) else {
+            return nil
+        }
+
+        return text
+    }
+
+    private static func surfaceSummaryCandidate(_ value: String?) -> String? {
+        guard let text = surfacePromptCandidate(value) else {
+            return nil
+        }
+
+        let normalized = text.lowercased()
+        let genericSummaries: Set<String> = [
+            "thinking.",
+            "running.",
+            "ready",
+            "completed",
+            "codex completed the turn.",
+            "codex started a new turn.",
+        ]
+        guard !genericSummaries.contains(normalized) else {
+            return nil
+        }
+
+        return text
+    }
+
+    private static func isInjectedPromptBlock(_ text: String) -> Bool {
+        text.hasPrefix("# AGENTS.md instructions")
+            || text.hasPrefix("<INSTRUCTIONS>")
+            || text.hasPrefix("<environment_context>")
+            || text.hasPrefix("<permissions instructions>")
+            || text.hasPrefix("<collaboration_mode>")
+            || text.hasPrefix("<skills_instructions>")
+    }
+
+    private static func compactElapsed(from start: Date, to referenceDate: Date) -> String {
+        let seconds = max(0, Int(referenceDate.timeIntervalSince(start)))
+        if seconds < 60 {
+            return "<1m"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes)m"
+        }
+
+        let hours = minutes / 60
+        if hours < 24 {
+            return "\(hours)h"
+        }
+
+        return "\(hours / 24)d"
     }
 }
 

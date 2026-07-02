@@ -3,35 +3,43 @@ import Foundation
 
 public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var transcriptPath: String?
+    public var threadName: String?
     public var initialUserPrompt: String?
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var currentTurnStartedAt: Date?
 
     public init(
         transcriptPath: String? = nil,
+        threadName: String? = nil,
         initialUserPrompt: String? = nil,
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        currentTurnStartedAt: Date? = nil
     ) {
         self.transcriptPath = transcriptPath
+        self.threadName = threadName
         self.initialUserPrompt = initialUserPrompt
         self.lastUserPrompt = lastUserPrompt
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.currentTurnStartedAt = currentTurnStartedAt
     }
 
     public var isEmpty: Bool {
         transcriptPath == nil
+            && threadName == nil
             && initialUserPrompt == nil
             && lastUserPrompt == nil
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && currentTurnStartedAt == nil
     }
 }
 
@@ -219,6 +227,114 @@ public final class CodexSessionStore: @unchecked Sendable {
     }
 }
 
+public final class CodexThreadNameIndex: @unchecked Sendable {
+    public static var defaultFileURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/session_index.jsonl")
+    }
+
+    private struct Entry {
+        var threadName: String
+        var updatedAt: Date?
+        var lineNumber: Int
+    }
+
+    private let fileURL: URL
+    private let fileManager: FileManager
+
+    public init(
+        fileURL: URL = CodexThreadNameIndex.defaultFileURL,
+        fileManager: FileManager = .default
+    ) {
+        self.fileURL = fileURL
+        self.fileManager = fileManager
+    }
+
+    public func loadNamesByThreadID() -> [String: String] {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return [:]
+        }
+
+        var entriesByID: [String: Entry] = [:]
+        var lineNumber = 0
+        contents.enumerateLines { line, _ in
+            lineNumber += 1
+            guard let entry = Self.parseEntry(from: line, lineNumber: lineNumber) else {
+                return
+            }
+
+            if let existing = entriesByID[entry.id],
+               !Self.shouldReplace(existing: existing, with: entry.entry) {
+                return
+            }
+
+            entriesByID[entry.id] = entry.entry
+        }
+
+        return entriesByID.mapValues(\.threadName)
+    }
+
+    private static func parseEntry(from line: String, lineNumber: Int) -> (id: String, entry: Entry)? {
+        guard let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let dictionary = object as? [String: Any],
+              let id = sanitizedString(dictionary["id"]),
+              let threadName = sanitizedString(dictionary["thread_name"]) else {
+            return nil
+        }
+
+        return (
+            id,
+            Entry(
+                threadName: threadName,
+                updatedAt: parseTimestamp(dictionary["updated_at"] as? String),
+                lineNumber: lineNumber
+            )
+        )
+    }
+
+    private static func shouldReplace(existing: Entry, with candidate: Entry) -> Bool {
+        switch (existing.updatedAt, candidate.updatedAt) {
+        case let (existingDate?, candidateDate?):
+            if existingDate != candidateDate {
+                return candidateDate > existingDate
+            }
+            return candidate.lineNumber > existing.lineNumber
+        case (nil, _?):
+            return true
+        case (_?, nil):
+            return false
+        case (nil, nil):
+            return candidate.lineNumber > existing.lineNumber
+        }
+    }
+
+    private static func sanitizedString(_ value: Any?) -> String? {
+        guard let string = value as? String else {
+            return nil
+        }
+
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func parseTimestamp(_ value: String?) -> Date? {
+        guard let value else {
+            return nil
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) {
+            return date
+        }
+
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+}
+
 public enum CodexArchivedSessionIndex: Sendable {
     public static var defaultDirectoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -372,17 +488,20 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    private let threadNameIndex: CodexThreadNameIndex
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
-        maxFiles: Int = 40
+        maxFiles: Int = 40,
+        threadNameIndex: CodexThreadNameIndex = CodexThreadNameIndex()
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
+        self.threadNameIndex = threadNameIndex
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
@@ -429,11 +548,14 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
             .prefix(maxFiles)
 
+        let threadNamesByID = threadNameIndex.loadNamesByThreadID()
         var recordsByID: [String: CodexTrackedSessionRecord] = [:]
         for candidate in recentCandidates {
+            let threadName = sessionID(from: candidate.fileURL).flatMap { threadNamesByID[$0] }
             guard let record = discoverRecord(
                 fileURL: candidate.fileURL,
-                modifiedAt: candidate.modifiedAt
+                modifiedAt: candidate.modifiedAt,
+                threadName: threadName
             ) else {
                 continue
             }
@@ -456,7 +578,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
     private func discoverRecord(
         fileURL: URL,
-        modifiedAt: Date
+        modifiedAt: Date,
+        threadName: String?
     ) -> CodexTrackedSessionRecord? {
         // Stream the rollout line by line instead of slurping the whole
         // file. Long-lived Codex sessions accumulate JSONL files of tens
@@ -502,11 +625,13 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
         let metadata = CodexSessionMetadata(
             transcriptPath: fileURL.path,
+            threadName: threadName,
             initialUserPrompt: snapshot.initialUserPrompt,
             lastUserPrompt: snapshot.lastUserPrompt,
             lastAssistantMessage: snapshot.lastAssistantMessage,
             currentTool: snapshot.currentTool,
-            currentCommandPreview: snapshot.currentCommandPreview
+            currentCommandPreview: snapshot.currentCommandPreview,
+            currentTurnStartedAt: snapshot.currentTurnStartedAt
         )
 
         return CodexTrackedSessionRecord(
@@ -519,6 +644,15 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             updatedAt: updatedAt,
             codexMetadata: metadata
         )
+    }
+
+    private func sessionID(from fileURL: URL) -> String? {
+        let filename = fileURL.deletingPathExtension().lastPathComponent
+        guard let idStart = filename.range(of: #"019[a-z0-9-]{32,}"#, options: .regularExpression) else {
+            return nil
+        }
+
+        return String(filename[idStart])
     }
 
     private static let streamingChunkSize = 64 * 1_024
@@ -573,11 +707,13 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var summary: String?
     public var phase: SessionPhase
     public var updatedAt: Date?
+    public var threadName: String?
     public var initialUserPrompt: String?
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var currentTurnStartedAt: Date?
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -585,33 +721,39 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         summary: String? = nil,
         phase: SessionPhase = .running,
         updatedAt: Date? = nil,
+        threadName: String? = nil,
         initialUserPrompt: String? = nil,
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        currentTurnStartedAt: Date? = nil,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
         self.summary = summary
         self.phase = phase
         self.updatedAt = updatedAt
+        self.threadName = threadName
         self.initialUserPrompt = initialUserPrompt
         self.lastUserPrompt = lastUserPrompt
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.currentTurnStartedAt = currentTurnStartedAt
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
 
     public var metadata: CodexSessionMetadata {
         CodexSessionMetadata(
+            threadName: threadName,
             initialUserPrompt: initialUserPrompt,
             lastUserPrompt: lastUserPrompt,
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
-            currentCommandPreview: currentCommandPreview
+            currentCommandPreview: currentCommandPreview,
+            currentTurnStartedAt: currentTurnStartedAt
         )
     }
 }
@@ -652,20 +794,24 @@ public enum CodexRolloutReducer {
         let oldMetadata = oldSnapshot.map {
             CodexSessionMetadata(
                 transcriptPath: transcriptPath,
+                threadName: $0.threadName,
                 initialUserPrompt: $0.initialUserPrompt,
                 lastUserPrompt: $0.lastUserPrompt,
                 lastAssistantMessage: $0.lastAssistantMessage,
                 currentTool: $0.currentTool,
-                currentCommandPreview: $0.currentCommandPreview
+                currentCommandPreview: $0.currentCommandPreview,
+                currentTurnStartedAt: $0.currentTurnStartedAt
             )
         }
         let newMetadata = CodexSessionMetadata(
             transcriptPath: transcriptPath,
+            threadName: newSnapshot.threadName,
             initialUserPrompt: newSnapshot.initialUserPrompt,
             lastUserPrompt: newSnapshot.lastUserPrompt,
             lastAssistantMessage: newSnapshot.lastAssistantMessage,
             currentTool: newSnapshot.currentTool,
-            currentCommandPreview: newSnapshot.currentCommandPreview
+            currentCommandPreview: newSnapshot.currentCommandPreview,
+            currentTurnStartedAt: newSnapshot.currentTurnStartedAt
         )
 
         if oldMetadata != newMetadata {
@@ -727,7 +873,13 @@ public enum CodexRolloutReducer {
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
         case "user_message":
-            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
+            guard let rawMessage = payload["message"] as? String else {
+                break
+            }
+
+            let trimmed = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !isInjectedPromptBlock(trimmed),
+                  let message = clipped(trimmed), !message.isEmpty else {
                 break
             }
 
@@ -1059,8 +1211,10 @@ public enum CodexRolloutReducer {
         timestamp: Date?,
         to snapshot: inout CodexRolloutSnapshot
     ) {
+        let turnStartedAt = timestamp ?? .now
         snapshot.initialUserPrompt = snapshot.initialUserPrompt ?? message
         snapshot.lastUserPrompt = message
+        snapshot.currentTurnStartedAt = turnStartedAt
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
         snapshot.phase = .running

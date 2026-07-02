@@ -32,6 +32,26 @@
 
 ---
 
+## Codex 专用用量刘海分支
+
+这个分支是 **Codex 专用的 Open Island 改版**。它保留上游 GPL-3.0 许可证和
+原作者归属，同时把刘海 UI 优化给主要使用 Codex Desktop / Codex CLI 的用户：
+
+- 闭合态刘海默认显示 Codex 剩余额度和刷新倒计时
+- 展开态刘海把短期额度和周额度分开放在刘海左右两侧
+- 可见界面隐藏 `5h` / `7d` 标签，只显示百分比和倒计时
+- 会话行把项目 / 工作区名称和 Codex 对话标题放在一起看
+- 隐藏重复的 `Codex.app` / `Cx` 标识
+- 修正 Codex 正在生成时被粗粒度 idle 事件误判为完成的问题
+
+完整改动说明、安全说明和搜索关键词见：
+[docs/codex-usage-island.md](docs/codex-usage-island.md)
+
+搜索关键词：Codex 用量显示、Codex 剩余额度、Codex 刷新倒计时、Codex 刘海工具、
+Codex 桌面版用量、Codex 会话监控、Open Island Codex 分支。
+
+---
+
 ## Open Island 是什么？
 
 Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI coding agents 提供实时控制面板——会话状态、权限审批、一键跳回正确的终端。全程不打断你的工作流。

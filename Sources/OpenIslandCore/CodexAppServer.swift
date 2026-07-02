@@ -67,6 +67,82 @@ public enum CodexTurnStatus: String, Codable, Sendable {
     case inProgress
 }
 
+public struct CodexAccountRateLimitsResponse: Codable, Equatable, Sendable {
+    public let rateLimits: CodexAppServerRateLimitSnapshot
+    public let rateLimitsByLimitId: [String: CodexAppServerRateLimitSnapshot]?
+    public let rateLimitResetCredits: CodexRateLimitResetCreditsSummary?
+}
+
+public struct CodexRateLimitResetCreditsSummary: Codable, Equatable, Sendable {
+    public let availableCount: Int?
+}
+
+public struct CodexAppServerRateLimitSnapshot: Codable, Equatable, Sendable {
+    public let limitId: String?
+    public let limitName: String?
+    public let primary: CodexAppServerRateLimitWindow?
+    public let secondary: CodexAppServerRateLimitWindow?
+    public let credits: CodexAppServerCreditsSnapshot?
+    public let individualLimit: String?
+    public let planType: String?
+    public let rateLimitReachedType: String?
+
+    public init(
+        limitId: String? = nil,
+        limitName: String? = nil,
+        primary: CodexAppServerRateLimitWindow? = nil,
+        secondary: CodexAppServerRateLimitWindow? = nil,
+        credits: CodexAppServerCreditsSnapshot? = nil,
+        individualLimit: String? = nil,
+        planType: String? = nil,
+        rateLimitReachedType: String? = nil
+    ) {
+        self.limitId = limitId
+        self.limitName = limitName
+        self.primary = primary
+        self.secondary = secondary
+        self.credits = credits
+        self.individualLimit = individualLimit
+        self.planType = planType
+        self.rateLimitReachedType = rateLimitReachedType
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case limitId
+        case limitName
+        case primary
+        case secondary
+        case credits
+        case individualLimit
+        case planType
+        case rateLimitReachedType
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        limitId = try container.decodeIfPresent(String.self, forKey: .limitId)
+        limitName = try container.decodeIfPresent(String.self, forKey: .limitName)
+        primary = try container.decodeIfPresent(CodexAppServerRateLimitWindow.self, forKey: .primary)
+        secondary = try container.decodeIfPresent(CodexAppServerRateLimitWindow.self, forKey: .secondary)
+        credits = try container.decodeIfPresent(CodexAppServerCreditsSnapshot.self, forKey: .credits)
+        individualLimit = try? container.decodeIfPresent(String.self, forKey: .individualLimit)
+        planType = try container.decodeIfPresent(String.self, forKey: .planType)
+        rateLimitReachedType = try container.decodeIfPresent(String.self, forKey: .rateLimitReachedType)
+    }
+}
+
+public struct CodexAppServerRateLimitWindow: Codable, Equatable, Sendable {
+    public let usedPercent: Double
+    public let windowDurationMins: Int
+    public let resetsAt: TimeInterval?
+}
+
+public struct CodexAppServerCreditsSnapshot: Codable, Equatable, Sendable {
+    public let hasCredits: Bool?
+    public let unlimited: Bool?
+    public let balance: String?
+}
+
 // MARK: - Notifications
 
 public enum CodexAppServerNotification: Sendable {
@@ -76,6 +152,7 @@ public enum CodexAppServerNotification: Sendable {
     case threadNameUpdated(threadId: String, name: String?)
     case turnStarted(threadId: String, turn: CodexTurn)
     case turnCompleted(threadId: String, turn: CodexTurn)
+    case accountRateLimitsUpdated(rateLimits: CodexAppServerRateLimitSnapshot)
     case unknown(method: String)
 }
 
@@ -195,6 +272,12 @@ public final class CodexAppServerClient: @unchecked Sendable {
         let data = try await sendRequest(method: "thread/list", params: Params(limit: limit))
         let result = try JSONDecoder().decode(Result.self, from: data)
         return result.threads
+    }
+
+    public func readAccountRateLimits() async throws -> CodexAccountRateLimitsResponse {
+        struct Params: Encodable {}
+        let data = try await sendRequest(method: "account/rateLimits/read", params: Params())
+        return try JSONDecoder().decode(CodexAccountRateLimitsResponse.self, from: data)
     }
 
     // MARK: - JSON-RPC transport
@@ -345,6 +428,9 @@ public final class CodexAppServerClient: @unchecked Sendable {
         case "turn/completed":
             guard let n = try? decoder.decode(TurnNotificationParams.self, from: paramsData) else { return }
             notification = .turnCompleted(threadId: n.threadId, turn: n.turn)
+        case "account/rateLimits/updated":
+            guard let n = try? decoder.decode(AccountRateLimitsUpdatedParams.self, from: paramsData) else { return }
+            notification = .accountRateLimitsUpdated(rateLimits: n.rateLimits)
         default:
             notification = .unknown(method: method)
         }
@@ -376,6 +462,10 @@ private struct ThreadNameUpdatedParams: Codable {
 private struct TurnNotificationParams: Codable {
     let threadId: String
     let turn: CodexTurn
+}
+
+private struct AccountRateLimitsUpdatedParams: Codable {
+    let rateLimits: CodexAppServerRateLimitSnapshot
 }
 
 // MARK: - Errors

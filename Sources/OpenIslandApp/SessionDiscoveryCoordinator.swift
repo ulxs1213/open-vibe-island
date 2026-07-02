@@ -217,8 +217,13 @@ final class SessionDiscoveryCoordinator {
     private func merge(discovered: AgentSession, into existing: AgentSession) -> AgentSession {
         var merged = existing
         let discoveredIsNewer = discovered.updatedAt >= existing.updatedAt
+        let rolloutRevivesCompletedCodexTurn = existing.tool == .codex
+            && discovered.tool == .codex
+            && existing.phase == .completed
+            && discovered.phase != .completed
+            && discovered.updatedAt >= existing.updatedAt.addingTimeInterval(-300)
 
-        if discoveredIsNewer {
+        if discoveredIsNewer || rolloutRevivesCompletedCodexTurn {
             merged.title = discovered.title
             merged.phase = discovered.phase
             merged.summary = discovered.summary
@@ -321,11 +326,13 @@ final class SessionDiscoveryCoordinator {
 
         let merged = CodexSessionMetadata(
             transcriptPath: discovered.transcriptPath ?? existing.transcriptPath,
+            threadName: discovered.threadName ?? existing.threadName,
             initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
             lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,
-            currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview
+            currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview,
+            currentTurnStartedAt: discovered.currentTurnStartedAt ?? existing.currentTurnStartedAt
         )
         return merged.isEmpty ? nil : merged
     }
@@ -432,16 +439,7 @@ final class SessionDiscoveryCoordinator {
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
-        let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
-        let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
-
-        let newRecords = records.filter { record in
-            !existingIDs.contains(record.sessionID)
-                && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
-        }
-        guard !newRecords.isEmpty else { return }
-
-        let newSessions = newRecords.map { record -> AgentSession in
+        let discoveredSessions = records.map { record -> AgentSession in
             var session = record.session
             session.isCodexAppSession = true
             session.isProcessAlive = true
@@ -463,11 +461,39 @@ final class SessionDiscoveryCoordinator {
             return session
         }
 
-        let merged = mergeDiscoveredSessions(newSessions)
+        let changedSessions = discoveredSessions.filter { discovered in
+            guard let existing = existingCodexSession(matching: discovered) else {
+                return true
+            }
+
+            return discovered.updatedAt > existing.updatedAt
+                || discovered.phase != existing.phase
+                || discovered.summary != existing.summary
+                || discovered.codexMetadata != existing.codexMetadata
+                || discovered.jumpTarget != existing.jumpTarget
+        }
+        guard !changedSessions.isEmpty else { return }
+
+        let merged = mergeDiscoveredSessions(changedSessions)
         state = SessionState(sessions: merged)
         refreshCodexRolloutTracking()
         scheduleCodexSessionPersistence()
-        onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+        onStatusMessage?("Updated \(changedSessions.count) Codex.app session(s) from local rollouts.")
+    }
+
+    private func existingCodexSession(matching discovered: AgentSession) -> AgentSession? {
+        if let exact = state.session(id: discovered.id) {
+            return exact
+        }
+
+        guard let transcriptPath = discovered.codexMetadata?.transcriptPath,
+              !transcriptPath.isEmpty else {
+            return nil
+        }
+
+        return state.sessions.first {
+            $0.tool == .codex && $0.codexMetadata?.transcriptPath == transcriptPath
+        }
     }
 
     // MARK: - Persistence scheduling

@@ -883,6 +883,150 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func codexRolloutRediscoveryRevivesRecentlyCompletedThreadWhenTurnIsRunning() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var existing = AgentSession(
+            id: "codex-thread",
+            title: "Codex · tools",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Idle.",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "tools",
+                paneTitle: "codex",
+                workingDirectory: "/tmp/tools",
+                codexThreadID: "codex-thread"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout.jsonl",
+                threadName: "codex用量可视化"
+            )
+        )
+        existing.isCodexAppSession = true
+        existing.isProcessAlive = true
+        model.state = SessionState(sessions: [existing])
+
+        let discovered = AgentSession(
+            id: "codex-thread",
+            title: "Codex · tools",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Running command.",
+            updatedAt: now.addingTimeInterval(-2),
+            jumpTarget: existing.jumpTarget,
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout.jsonl",
+                threadName: "codex用量可视化",
+                lastUserPrompt: "Fix the status display.",
+                currentTool: "exec_command"
+            )
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([discovered])
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.phase == .running)
+        #expect(merged.first?.summary == "Running command.")
+        #expect(merged.first?.codexMetadata?.threadName == "codex用量可视化")
+        #expect(merged.first?.codexMetadata?.currentTool == "exec_command")
+    }
+
+    @Test
+    func rolloutRunningEventRevivesOpenCodexAppThreadAfterFalseCompletion() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var existing = AgentSession(
+            id: "codex-thread",
+            title: "Codex · tools",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Idle.",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "tools",
+                paneTitle: "codex",
+                workingDirectory: "/tmp/tools",
+                codexThreadID: "codex-thread"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout.jsonl",
+                threadName: "codex用量可视化"
+            )
+        )
+        existing.isCodexAppSession = true
+        existing.isProcessAlive = true
+        model.state = SessionState(sessions: [existing])
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "codex-thread",
+                    summary: "Running command.",
+                    phase: .running,
+                    timestamp: now.addingTimeInterval(600)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: "codex-thread")?.phase == .running)
+        #expect(model.state.session(id: "codex-thread")?.summary == "Running command.")
+    }
+
+    @Test
+    func rolloutRunningEventDoesNotReviveCompletedCliSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        let existing = AgentSession(
+            id: "claude-session",
+            title: "Claude · tools",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Done.",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "tools",
+                paneTitle: "claude",
+                workingDirectory: "/tmp/tools"
+            )
+        )
+        model.state = SessionState(sessions: [existing])
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "claude-session",
+                    summary: "Running command.",
+                    phase: .running,
+                    timestamp: now.addingTimeInterval(600)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: "claude-session")?.phase == .completed)
+        #expect(model.state.session(id: "claude-session")?.summary == "Done.")
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

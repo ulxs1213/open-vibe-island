@@ -203,6 +203,24 @@ struct V6CenterLabelView: View {
     }
 }
 
+struct V6ClosedLeftStatusView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(V6Palette.paper.opacity(0.9))
+    }
+
+    static func intrinsicWidth(of text: String) -> CGFloat {
+        text.unicodeScalars.reduce(CGFloat(14)) { width, scalar in
+            width + (scalar.value < 128 ? 6.9 : 12.0)
+        }
+    }
+}
+
 // MARK: - Closed-pill layouts
 
 /// The canonical v6 closed-island pill rendered inside a fixed-height frame.
@@ -211,6 +229,7 @@ struct V6CenterLabelView: View {
 struct V6ClosedPill: View {
     var mode: UnifiedBars.Mode
     var label: String?          // suppressed automatically in MacBook layout
+    var leftStatusText: String? = nil
     var rightSlot: IslandRightSlotContent?
     var layout: V6ClosedLayout
     var height: CGFloat = 32
@@ -287,26 +306,49 @@ struct V6ClosedPill: View {
     // MARK: MacBook (outer width locked)
 
     private var macbookBody: some View {
-        let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
+        let baseSideReserve: CGFloat = 44
+        let leftStatusWidth = leftStatusText.map { V6ClosedLeftStatusView.intrinsicWidth(of: $0) } ?? 0
+        let leftStatusGap: CGFloat = leftStatusText == nil ? 0 : 7
+        let leftTrailingSpace: CGFloat = leftStatusText == nil ? 0 : 10
+        let rightSlotWidth = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+        let leftReserve = max(
+            baseSideReserve,
+            pad + 24 + leftStatusGap + leftStatusWidth + leftTrailingSpace
+        )
+        let rightReserve = max(baseSideReserve, pad + rightSlotWidth)
+        let outer = leftReserve + physicalNotchWidth + rightReserve
 
         return ZStack {
             V6ClosedPillShape()
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
-                    .frame(width: 24, height: 24)
+                HStack(spacing: leftStatusGap) {
+                    UnifiedBars(mode: mode, size: 24)
+                        .frame(width: 24, height: 24)
 
-                Spacer(minLength: 0)
+                    if let leftStatusText {
+                        V6ClosedLeftStatusView(text: leftStatusText)
+                    }
+                }
+                .padding(.leading, pad)
+                .frame(width: leftReserve, alignment: .leading)
+
+                Color.clear
+                    .frame(width: physicalNotchWidth)
 
                 if let rightSlot {
                     V6RightSlotView(content: rightSlot)
+                        .padding(.trailing, pad)
+                        .frame(width: rightReserve, alignment: .trailing)
+                } else {
+                    Color.clear
+                        .frame(width: rightReserve)
                 }
             }
-            .padding(.horizontal, pad)
         }
         .frame(width: outer, height: height)
+        .offset(x: (rightReserve - leftReserve) / 2)
     }
 }
 

@@ -25,6 +25,10 @@ final class CodexAppServerCoordinator {
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
 
+    /// Callback for account/rateLimits snapshots from Codex app-server.
+    @ObservationIgnored
+    var onUsageSnapshot: ((CodexUsageSnapshot) -> Void)?
+
     /// Returns `true` if a session with the given id is already tracked.
     /// Used to avoid re-emitting `sessionStarted` (which rebuilds the
     /// session and wipes richer state from hooks/rediscovery).
@@ -74,6 +78,7 @@ final class CodexAppServerCoordinator {
 
                 // Fetch currently loaded threads and create sessions.
                 await self.syncLoadedThreads()
+                await self.syncAccountRateLimits()
             } catch {
                 self.connectTask = nil
                 self.onStatusMessage?("Failed to connect to Codex app-server: \(error.localizedDescription)")
@@ -110,6 +115,18 @@ final class CodexAppServerCoordinator {
             }
         } catch {
             onStatusMessage?("Failed to list loaded Codex threads: \(error.localizedDescription)")
+        }
+    }
+
+    private func syncAccountRateLimits() async {
+        guard let client else { return }
+        do {
+            let response = try await client.readAccountRateLimits()
+            if let snapshot = CodexUsageLoader.snapshot(fromAppServer: response) {
+                onUsageSnapshot?(snapshot)
+            }
+        } catch {
+            onStatusMessage?("Failed to read Codex app-server rate limits: \(error.localizedDescription)")
         }
     }
 
@@ -159,16 +176,11 @@ final class CodexAppServerCoordinator {
                     ))
                 }
             case .idle:
-                // Idle means "between turns" in the same thread — the thread
-                // is still open.  Only `thread/closed` truly ends a session.
-                onEvent?(.activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: threadId,
-                        summary: "Idle.",
-                        phase: .completed,
-                        timestamp: .now
-                    )
-                ))
+                // `thread/status=idle` is too coarse for Codex Desktop: it can
+                // arrive between streamed assistant progress messages and tool
+                // calls while the same turn is still active. Completion is
+                // handled by rollout transcript parsing or `thread/closed`.
+                break
             case .systemError:
                 // Quota limits and other hard failures can leave the thread in
                 // systemError without a turn/completed notification. Mark the
@@ -213,25 +225,45 @@ final class CodexAppServerCoordinator {
             ))
 
         case .turnCompleted(let threadId, let turn):
-            // A turn completing doesn't end the thread — the user can send
-            // another message.  Use activityUpdated(phase: .completed) so the
-            // session stays visible as "Completed" rather than being torn
-            // down.  `thread/closed` is the authoritative end signal.
-            let summary: String
             switch turn.status {
-            case .completed: summary = "Turn completed."
-            case .interrupted: summary = "Turn interrupted."
-            case .failed: summary = "Turn failed."
-            case .inProgress: summary = "Turn in progress."
+            case .completed:
+                // In Codex Desktop this can arrive while the same visible thread
+                // is still streaming progress and tool calls. The rollout file
+                // has the richer event order, so let it decide "done".
+                break
+            case .interrupted:
+                onEvent?(.activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: threadId,
+                        summary: "Turn interrupted.",
+                        phase: .completed,
+                        timestamp: .now
+                    )
+                ))
+            case .failed:
+                onEvent?(.activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: threadId,
+                        summary: "Turn failed.",
+                        phase: .completed,
+                        timestamp: .now
+                    )
+                ))
+            case .inProgress:
+                onEvent?(.activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: threadId,
+                        summary: "Turn in progress.",
+                        phase: .running,
+                        timestamp: .now
+                    )
+                ))
             }
-            onEvent?(.activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: threadId,
-                    summary: summary,
-                    phase: .completed,
-                    timestamp: .now
-                )
-            ))
+
+        case .accountRateLimitsUpdated(let rateLimits):
+            if let snapshot = CodexUsageLoader.snapshot(fromAppServerRateLimits: rateLimits) {
+                onUsageSnapshot?(snapshot)
+            }
 
         case .unknown:
             break
@@ -270,6 +302,7 @@ final class CodexAppServerCoordinator {
                 ),
                 codexMetadata: CodexSessionMetadata(
                     transcriptPath: thread.path,
+                    threadName: thread.name,
                     initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
                 )
             )

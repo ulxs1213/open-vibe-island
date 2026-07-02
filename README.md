@@ -32,6 +32,29 @@
 
 ---
 
+## Codex Usage Island Fork
+
+This branch is a **Codex-focused Open Island fork**. It keeps the upstream
+GPL-3.0 license and attribution, but specializes the notch UI for Codex Desktop
+and Codex CLI users:
+
+- closed notch shows Codex remaining quota and reset countdown by default
+- expanded notch separates short-term and weekly Codex quota around the notch
+- visible `5h` / `7d` labels are hidden; the UI shows percentage and countdown
+- session rows combine project/workspace name with Codex conversation title
+- repeated `Codex.app` / `Cx` labels are hidden
+- running Codex turns are kept running instead of being marked completed by
+  coarse idle events
+
+Full change log, safety notes, and search keywords:
+[docs/codex-usage-island.md](docs/codex-usage-island.md)
+
+Search keywords: Codex usage island, Codex quota countdown, OpenAI Codex macOS
+notch, Codex Desktop usage widget, Codex agent session monitor, Codex dynamic
+island, Open Island Codex fork.
+
+---
+
 ## What is Open Island?
 
 Open Island sits in your Mac's **notch** (or top bar) and gives you a real-time control surface for your AI coding agents — session status, permission approvals, and instant jump-back to the right terminal. All without leaving your flow.

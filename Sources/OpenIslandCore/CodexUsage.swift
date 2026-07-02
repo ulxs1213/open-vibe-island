@@ -5,6 +5,7 @@ public struct CodexUsageWindow: Equatable, Codable, Sendable, Identifiable {
     public var label: String
     public var usedPercentage: Double
     public var leftPercentage: Double
+    public var isPercentageReliable: Bool
     public var windowMinutes: Int
     public var resetsAt: Date?
 
@@ -13,6 +14,7 @@ public struct CodexUsageWindow: Equatable, Codable, Sendable, Identifiable {
         label: String,
         usedPercentage: Double,
         leftPercentage: Double,
+        isPercentageReliable: Bool = true,
         windowMinutes: Int,
         resetsAt: Date?
     ) {
@@ -20,6 +22,7 @@ public struct CodexUsageWindow: Equatable, Codable, Sendable, Identifiable {
         self.label = label
         self.usedPercentage = usedPercentage
         self.leftPercentage = leftPercentage
+        self.isPercentageReliable = isPercentageReliable
         self.windowMinutes = windowMinutes
         self.resetsAt = resetsAt
     }
@@ -61,6 +64,7 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
 
 public enum CodexUsageLoader {
     public static let defaultRootURL = CodexRolloutDiscovery.defaultRootURL
+    public static let appServerSourcePath = "codex-app-server:account/rateLimits/read"
 
     private struct Candidate {
         var fileURL: URL
@@ -118,6 +122,53 @@ public enum CodexUsageLoader {
         }
 
         return nil
+    }
+
+    public static func loadFromAppServer(
+        codexPath: String = "/Applications/Codex.app/Contents/Resources/codex"
+    ) async throws -> CodexUsageSnapshot? {
+        let client = CodexAppServerClient(codexPath: codexPath)
+        try await client.start()
+        defer { client.stop() }
+
+        let response = try await client.readAccountRateLimits()
+        return snapshot(fromAppServer: response, capturedAt: .now)
+    }
+
+    public static func snapshot(
+        fromAppServer response: CodexAccountRateLimitsResponse,
+        capturedAt: Date = .now
+    ) -> CodexUsageSnapshot? {
+        snapshot(
+            fromAppServerRateLimits: response.rateLimits,
+            capturedAt: capturedAt
+        )
+    }
+
+    public static func snapshot(
+        fromAppServerRateLimits rateLimits: CodexAppServerRateLimitSnapshot,
+        capturedAt: Date = .now
+    ) -> CodexUsageSnapshot? {
+        var windows: [CodexUsageWindow] = []
+
+        if let primary = usageWindow(for: "primary", from: rateLimits.primary) {
+            windows.append(primary)
+        }
+        if let secondary = usageWindow(for: "secondary", from: rateLimits.secondary) {
+            windows.append(secondary)
+        }
+
+        guard !windows.isEmpty else {
+            return nil
+        }
+
+        return CodexUsageSnapshot(
+            sourceFilePath: appServerSourcePath,
+            capturedAt: capturedAt,
+            planType: rateLimits.planType,
+            limitID: rateLimits.limitId,
+            windows: windows
+        )
     }
 
     private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
@@ -180,13 +231,34 @@ public enum CodexUsageLoader {
             return nil
         }
 
+        let isPercentageReliable = usedPercentage > 0
         return CodexUsageWindow(
             key: key,
             label: windowLabel(forMinutes: windowMinutes),
             usedPercentage: usedPercentage,
             leftPercentage: max(0, 100 - usedPercentage),
+            isPercentageReliable: isPercentageReliable,
             windowMinutes: windowMinutes,
-            resetsAt: date(from: payload["resets_at"])
+            resetsAt: isPercentageReliable ? date(from: payload["resets_at"]) : nil
+        )
+    }
+
+    private static func usageWindow(
+        for key: String,
+        from window: CodexAppServerRateLimitWindow?
+    ) -> CodexUsageWindow? {
+        guard let window else {
+            return nil
+        }
+
+        return CodexUsageWindow(
+            key: key,
+            label: windowLabel(forMinutes: window.windowDurationMins),
+            usedPercentage: window.usedPercent,
+            leftPercentage: max(0, 100 - window.usedPercent),
+            isPercentageReliable: true,
+            windowMinutes: window.windowDurationMins,
+            resetsAt: window.resetsAt.map { Date(timeIntervalSince1970: $0) }
         )
     }
 

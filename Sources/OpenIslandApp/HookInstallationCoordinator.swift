@@ -255,10 +255,10 @@ final class HookInstallationCoordinator {
 
     var codexUsageStatusSummary: String {
         if let summary = codexUsageSummaryText {
-            return "Reading the latest local rollout token_count snapshots · \(summary)"
+            return "Reading Codex app-server account/rateLimits/read · \(summary)"
         }
 
-        return "Passively reading ~/.codex/sessions/**/rollout-*.jsonl and extracting token_count.rate_limits."
+        return "Reading Codex app-server account/rateLimits/read, with rollout token_count as fallback."
     }
 
     var codexUsageSummaryText: String? {
@@ -776,8 +776,12 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             do {
-                let snapshot = try await Task.detached(priority: .utility) {
-                    try CodexUsageLoader.load()
+                let snapshot: CodexUsageSnapshot? = try await Task.detached(priority: .utility) {
+                    if let appServerSnapshot = try await CodexUsageLoader.loadFromAppServer() {
+                        return appServerSnapshot
+                    }
+
+                    return try CodexUsageLoader.load()
                 }.value
                 self.codexUsageSnapshot = snapshot
             } catch {
