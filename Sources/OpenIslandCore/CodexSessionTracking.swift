@@ -324,14 +324,7 @@ public final class CodexThreadNameIndex: @unchecked Sendable {
             return nil
         }
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
-            return date
-        }
-
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
+        return CodexRolloutTimestampParser.parse(value, allowsPlainInternetDateTime: true)
     }
 }
 
@@ -1859,7 +1852,40 @@ private func codexRolloutParseTimestamp(_ string: String?) -> Date? {
         return nil
     }
 
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: string)
+    return CodexRolloutTimestampParser.parse(string, allowsPlainInternetDateTime: false)
+}
+
+private enum CodexRolloutTimestampParser {
+    private static let fractionalKey = "open-island.codex.iso8601.fractional"
+    private static let plainKey = "open-island.codex.iso8601.plain"
+
+    static func parse(_ string: String, allowsPlainInternetDateTime: Bool) -> Date? {
+        if let date = formatter(
+            key: fractionalKey,
+            options: [.withInternetDateTime, .withFractionalSeconds]
+        ).date(from: string) {
+            return date
+        }
+
+        guard allowsPlainInternetDateTime else {
+            return nil
+        }
+
+        return formatter(key: plainKey, options: [.withInternetDateTime])
+            .date(from: string)
+    }
+
+    private static func formatter(
+        key: String,
+        options: ISO8601DateFormatter.Options
+    ) -> ISO8601DateFormatter {
+        if let existing = Thread.current.threadDictionary[key] as? ISO8601DateFormatter {
+            return existing
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = options
+        Thread.current.threadDictionary[key] = formatter
+        return formatter
+    }
 }

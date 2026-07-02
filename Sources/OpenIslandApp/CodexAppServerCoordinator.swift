@@ -17,6 +17,12 @@ final class CodexAppServerCoordinator {
     @ObservationIgnored
     private var connectTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var usageRefreshTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var lastUsageSnapshot: CodexUsageSnapshot?
+
     /// Callback to emit AgentEvents into AppModel.
     @ObservationIgnored
     var onEvent: ((AgentEvent) -> Void)?
@@ -78,7 +84,8 @@ final class CodexAppServerCoordinator {
 
                 // Fetch currently loaded threads and create sessions.
                 await self.syncLoadedThreads()
-                await self.syncAccountRateLimits()
+                _ = await self.syncAccountRateLimits()
+                self.startUsageRefreshLoopIfNeeded()
             } catch {
                 self.connectTask = nil
                 self.onStatusMessage?("Failed to connect to Codex app-server: \(error.localizedDescription)")
@@ -90,6 +97,8 @@ final class CodexAppServerCoordinator {
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
+        usageRefreshTask?.cancel()
+        usageRefreshTask = nil
         client?.stop()
         client = nil
         isConnected = false
@@ -118,16 +127,39 @@ final class CodexAppServerCoordinator {
         }
     }
 
-    private func syncAccountRateLimits() async {
-        guard let client else { return }
+    private func syncAccountRateLimits() async -> CodexUsageSnapshot? {
+        guard let client else { return nil }
         do {
             let response = try await client.readAccountRateLimits()
             if let snapshot = CodexUsageLoader.snapshot(fromAppServer: response) {
-                onUsageSnapshot?(snapshot)
+                publishUsageSnapshot(snapshot)
+                return snapshot
             }
         } catch {
             onStatusMessage?("Failed to read Codex app-server rate limits: \(error.localizedDescription)")
         }
+        return nil
+    }
+
+    private func startUsageRefreshLoopIfNeeded() {
+        guard usageRefreshTask == nil else { return }
+
+        usageRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                let interval = self.lastUsageSnapshot?.recommendedRefreshIntervalSeconds()
+                    ?? CodexUsageSnapshot.normalRefreshIntervalSeconds
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { break }
+                _ = await self.syncAccountRateLimits()
+            }
+        }
+    }
+
+    private func publishUsageSnapshot(_ snapshot: CodexUsageSnapshot) {
+        lastUsageSnapshot = snapshot
+        onUsageSnapshot?(snapshot)
     }
 
     // MARK: - Notification handling
@@ -262,7 +294,7 @@ final class CodexAppServerCoordinator {
 
         case .accountRateLimitsUpdated(let rateLimits):
             if let snapshot = CodexUsageLoader.snapshot(fromAppServerRateLimits: rateLimits) {
-                onUsageSnapshot?(snapshot)
+                publishUsageSnapshot(snapshot)
             }
 
         case .unknown:

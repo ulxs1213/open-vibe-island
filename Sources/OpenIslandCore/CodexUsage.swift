@@ -37,6 +37,10 @@ public struct CodexUsageWindow: Equatable, Codable, Sendable, Identifiable {
 }
 
 public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
+    public static let normalRefreshIntervalSeconds = 30
+    public static let elevatedRefreshIntervalSeconds = 15
+    public static let depletedRefreshIntervalSeconds = 5
+
     public var sourceFilePath: String
     public var capturedAt: Date?
     public var planType: String?
@@ -59,6 +63,37 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
 
     public var isEmpty: Bool {
         windows.isEmpty
+    }
+
+    /// Recommended polling cadence for keeping the visible quota fresh.
+    ///
+    /// Codex may not emit a push notification exactly when remaining usage hits
+    /// zero, so the island needs to poll more aggressively near depletion and
+    /// close to a reset boundary.
+    public func recommendedRefreshIntervalSeconds(now: Date = .now) -> Int {
+        let reliableWindows = windows.filter(\.isPercentageReliable)
+        guard reliableWindows.isEmpty == false else {
+            return Self.normalRefreshIntervalSeconds
+        }
+
+        let minimumRemaining = reliableWindows
+            .map(\.leftPercentage)
+            .min() ?? 100
+        let nextResetInterval = reliableWindows
+            .compactMap(\.resetsAt)
+            .map { $0.timeIntervalSince(now) }
+            .filter { $0 > 0 }
+            .min()
+
+        if minimumRemaining <= 1 || nextResetInterval.map({ $0 <= 120 }) == true {
+            return Self.depletedRefreshIntervalSeconds
+        }
+
+        if minimumRemaining <= 5 || nextResetInterval.map({ $0 <= 600 }) == true {
+            return Self.elevatedRefreshIntervalSeconds
+        }
+
+        return Self.normalRefreshIntervalSeconds
     }
 }
 

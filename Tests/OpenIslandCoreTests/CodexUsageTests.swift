@@ -187,6 +187,96 @@ struct CodexUsageTests {
 
         #expect(snapshot?.windows.map(\.label) == ["1h 30m", "1d 1h"])
     }
+
+    @Test
+    func appServerSnapshotKeepsDepletedUsageReliable() throws {
+        let snapshot = try #require(CodexUsageLoader.snapshot(
+            fromAppServerRateLimits: CodexAppServerRateLimitSnapshot(
+                limitId: "codex",
+                primary: CodexAppServerRateLimitWindow(
+                    usedPercent: 100,
+                    windowDurationMins: 300,
+                    resetsAt: 2_000
+                )
+            ),
+            capturedAt: Date(timeIntervalSince1970: 1_000)
+        ))
+
+        let window = try #require(snapshot.windows.first)
+        #expect(window.isPercentageReliable)
+        #expect(window.usedPercentage == 100)
+        #expect(window.leftPercentage == 0)
+        #expect(snapshot.recommendedRefreshIntervalSeconds(now: Date(timeIntervalSince1970: 1_000)) == 5)
+    }
+
+    @Test
+    func codexUsageSnapshotRecommendsAdaptiveRefreshIntervals() {
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        let normal = CodexUsageSnapshot(
+            sourceFilePath: "test",
+            capturedAt: now,
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 50,
+                    leftPercentage: 50,
+                    windowMinutes: 300,
+                    resetsAt: now.addingTimeInterval(3_600)
+                ),
+            ]
+        )
+        #expect(normal.recommendedRefreshIntervalSeconds(now: now) == 30)
+
+        let lowRemaining = CodexUsageSnapshot(
+            sourceFilePath: "test",
+            capturedAt: now,
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 96,
+                    leftPercentage: 4,
+                    windowMinutes: 300,
+                    resetsAt: now.addingTimeInterval(1_800)
+                ),
+            ]
+        )
+        #expect(lowRemaining.recommendedRefreshIntervalSeconds(now: now) == 15)
+
+        let depleted = CodexUsageSnapshot(
+            sourceFilePath: "test",
+            capturedAt: now,
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 100,
+                    leftPercentage: 0,
+                    windowMinutes: 300,
+                    resetsAt: now.addingTimeInterval(1_800)
+                ),
+            ]
+        )
+        #expect(depleted.recommendedRefreshIntervalSeconds(now: now) == 5)
+
+        let nearReset = CodexUsageSnapshot(
+            sourceFilePath: "test",
+            capturedAt: now,
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 20,
+                    leftPercentage: 80,
+                    windowMinutes: 300,
+                    resetsAt: now.addingTimeInterval(90)
+                ),
+            ]
+        )
+        #expect(nearReset.recommendedRefreshIntervalSeconds(now: now) == 5)
+    }
 }
 
 private func temporaryRootURL(named name: String) -> URL {

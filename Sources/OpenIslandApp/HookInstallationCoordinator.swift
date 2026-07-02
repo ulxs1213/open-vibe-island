@@ -42,6 +42,9 @@ final class HookInstallationCoordinator {
     var onStatusMessage: ((String) -> Void)?
 
     @ObservationIgnored
+    var shouldSkipCodexUsageShortPoll: (() -> Bool)?
+
+    @ObservationIgnored
     private let codexHookInstallationManager = CodexHookInstallationManager()
 
     /// Computed so it always reflects the latest `ClaudeConfigDirectory` setting.
@@ -774,19 +777,26 @@ final class HookInstallationCoordinator {
     func refreshCodexUsageState() {
         Task { [weak self] in
             guard let self else { return }
+            await self.refreshCodexUsageStateNow()
+        }
+    }
 
-            do {
-                let snapshot: CodexUsageSnapshot? = try await Task.detached(priority: .utility) {
-                    if let appServerSnapshot = try await CodexUsageLoader.loadFromAppServer() {
-                        return appServerSnapshot
-                    }
+    private func refreshCodexUsageStateNow() async {
+        if shouldSkipCodexUsageShortPoll?() == true {
+            return
+        }
 
-                    return try CodexUsageLoader.load()
-                }.value
-                self.codexUsageSnapshot = snapshot
-            } catch {
-                self.onStatusMessage?("Failed to read Codex usage state: \(error.localizedDescription)")
-            }
+        do {
+            let snapshot: CodexUsageSnapshot? = try await Task.detached(priority: .utility) {
+                if let appServerSnapshot = try await CodexUsageLoader.loadFromAppServer() {
+                    return appServerSnapshot
+                }
+
+                return try CodexUsageLoader.load()
+            }.value
+            self.codexUsageSnapshot = snapshot
+        } catch {
+            self.onStatusMessage?("Failed to read Codex usage state: \(error.localizedDescription)")
         }
     }
 
@@ -1093,8 +1103,10 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             while !Task.isCancelled {
-                self.refreshCodexUsageState()
-                try? await Task.sleep(for: .seconds(120))
+                await self.refreshCodexUsageStateNow()
+                let interval = self.codexUsageSnapshot?.recommendedRefreshIntervalSeconds()
+                    ?? CodexUsageSnapshot.normalRefreshIntervalSeconds
+                try? await Task.sleep(for: .seconds(interval))
             }
         }
     }

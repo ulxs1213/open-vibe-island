@@ -268,7 +268,7 @@ struct IslandPanelView: View {
     private func v6ClosedSurface() -> some View {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
-        TimelineView(.periodic(from: Date(), by: 60)) { timeline in
+        TimelineView(.periodic(from: Date(), by: closedCodexFiveHourUsageTimelineInterval())) { timeline in
             V6ClosedPill(
                 mode: model.islandClosedMode,
                 label: layout == .external ? model.islandClosedLabel() : nil,
@@ -349,6 +349,17 @@ struct IslandPanelView: View {
         }
 
         return parts.joined(separator: " ")
+    }
+
+    private func closedCodexFiveHourUsageTimelineInterval(now: Date = .now) -> TimeInterval {
+        guard model.showCodexUsage,
+              let snapshot = model.codexUsageSnapshot,
+              let window = snapshot.windows.first(where: { $0.key == "primary" }),
+              let resetsAt = window.resetsAt else {
+            return 60
+        }
+
+        return countdownNeedsSeconds(until: resetsAt, now: now) ? 1 : 60
     }
 
     @ViewBuilder
@@ -1061,7 +1072,7 @@ struct IslandPanelView: View {
         usesShortTitle: Bool,
         detailStyle: UsageDetailStyle
     ) -> some View {
-        TimelineView(.periodic(from: Date(), by: 60)) { timeline in
+        TimelineView(.periodic(from: Date(), by: usageTimelineInterval(for: provider.windows))) { timeline in
             compactUsageChipContent(
                 provider,
                 usesShortTitle: usesShortTitle,
@@ -1161,6 +1172,16 @@ struct IslandPanelView: View {
             return nil
         }
 
+        if countdownNeedsSeconds(until: date, now: now) {
+            let totalSeconds = max(1, Int(ceil(interval)))
+            let minutes = totalSeconds / 60
+            let seconds = totalSeconds % 60
+            if minutes > 0 {
+                return "\(minutes)m\(seconds)s"
+            }
+            return "\(seconds)s"
+        }
+
         let totalMinutes = max(1, Int(ceil(interval / 60)))
         let days = totalMinutes / 1_440
         let hours = (totalMinutes % 1_440) / 60
@@ -1175,6 +1196,18 @@ struct IslandPanelView: View {
         }
 
         return "\(minutes)m"
+    }
+
+    private func usageTimelineInterval(for windows: [UsageWindowPresentation], now: Date = .now) -> TimeInterval {
+        windows.contains { window in
+            guard let resetsAt = window.resetsAt else { return false }
+            return countdownNeedsSeconds(until: resetsAt, now: now)
+        } ? 1 : 60
+    }
+
+    private func countdownNeedsSeconds(until date: Date, now: Date) -> Bool {
+        let interval = date.timeIntervalSince(now)
+        return interval > 0 && interval <= 300
     }
 }
 

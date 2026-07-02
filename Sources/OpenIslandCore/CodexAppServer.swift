@@ -167,6 +167,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
     /// Internal access so tests can inject a discard `Pipe` and drive
     /// the request path without launching a real codex subprocess.
     var stdin: FileHandle?
+    private var stdoutReadHandle: FileHandle?
+    private var stderrReadHandle: FileHandle?
     /// Per-request timeout. App-server RPC calls (initialize,
     /// thread/list, …) normally complete in tens of milliseconds; a
     /// hang past 30 s means codex is wedged and we must release the
@@ -212,16 +214,27 @@ public final class CodexAppServerClient: @unchecked Sendable {
         self.stdin = stdinPipe.fileHandleForWriting
         self.process = proc
 
+        let stdoutReadHandle = stdoutPipe.fileHandleForReading
+        let stderrReadHandle = stderrPipe.fileHandleForReading
+        self.stdoutReadHandle = stdoutReadHandle
+        self.stderrReadHandle = stderrReadHandle
+
         // Read stdout in a background thread.
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stdoutReadHandle.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             self?.handleIncomingData(data)
         }
 
         // Drain stderr so a full pipe can't block the child process.
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            _ = handle.availableData
+        stderrReadHandle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+            }
         }
 
         try proc.run()
@@ -242,6 +255,13 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     /// Stop the app-server subprocess.
     public func stop() {
+        stdoutReadHandle?.readabilityHandler = nil
+        stderrReadHandle?.readabilityHandler = nil
+        try? stdoutReadHandle?.close()
+        try? stderrReadHandle?.close()
+        try? stdin?.close()
+        stdoutReadHandle = nil
+        stderrReadHandle = nil
         process?.terminate()
         process = nil
         stdin = nil

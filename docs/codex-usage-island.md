@@ -46,12 +46,19 @@ This branch intentionally optimizes for a Codex-only workflow:
   percentage plus reset countdown, for example `22% 1h15m`.
 - The code keeps the internal keys so the two windows can still be routed
   correctly without exposing `5h` or `7d` text in the UI.
+- App-server quota snapshots are treated as reliable even at 100% used, so the
+  island can display `0%` remaining instead of keeping a stale earlier value.
+- The app polls Codex quota adaptively: normally every 30 seconds, every 15
+  seconds when quota is low or reset is near, and every 5 seconds when usage is
+  depleted or the reset boundary is imminent.
 
 ### 2. Closed Notch Usage
 
 - In MacBook notch mode, the closed island now shows Codex short-term remaining
   quota by default.
 - The closed island intentionally does not show the weekly window.
+- The reset countdown switches to seconds during the final five minutes, for
+  example `4m59s`, so reset timing is visible without opening the island.
 - The closed pill can expand its left reserve to fit the quota text while
   keeping the physical notch aligned.
 - If the app cannot read a reliable Codex quota, the closed island hides the

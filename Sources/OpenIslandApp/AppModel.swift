@@ -638,6 +638,9 @@ final class AppModel {
         hooks.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
+        hooks.shouldSkipCodexUsageShortPoll = { [weak self] in
+            self?.codexAppServer.isConnected == true
+        }
 
         discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         discovery.onStatusMessage = { [weak self] message in

@@ -72,6 +72,9 @@ final class SessionDiscoveryCoordinator {
     @ObservationIgnored
     private var cursorSessionPersistenceTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var isCodexAppRediscoveryInFlight = false
+
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
         set {
@@ -422,17 +425,20 @@ final class SessionDiscoveryCoordinator {
     /// Re-scan `~/.codex/sessions/` for rollout files not yet tracked.
     /// Called periodically when Codex.app is running as a fallback when
     /// the app-server connection is unavailable.  Throttled to at most
-    /// once per 10 seconds.
+    /// once per minute because this fallback streams recent rollout files.
     func rediscoverCodexAppSessionsIfNeeded() {
         let now = Date.now
-        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
+        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 60 else { return }
+        guard !isCodexAppRediscoveryInFlight else { return }
         lastCodexAppRescanDate = now
+        isCodexAppRediscoveryInFlight = true
 
         let discovery = codexRolloutDiscovery
         Task.detached(priority: .utility) { [weak self] in
             let discovered = discovery.discoverRecentSessions()
-            guard !discovered.isEmpty else { return }
             await MainActor.run { [weak self] in
+                self?.isCodexAppRediscoveryInFlight = false
+                guard !discovered.isEmpty else { return }
                 self?.applyCodexAppRediscovery(discovered)
             }
         }
