@@ -45,13 +45,15 @@ and Codex CLI users:
 - repeated `Codex.app` / `Cx` labels are hidden
 - running Codex turns are kept running instead of being marked completed by
   coarse idle events
+- a local keep-awake menu can prevent idle system/display sleep for timed
+  Codex work sessions
 
 Full change log, safety notes, and search keywords:
 [docs/codex-usage-island.md](docs/codex-usage-island.md)
 
 Search keywords: Codex usage island, Codex quota countdown, OpenAI Codex macOS
 notch, Codex Desktop usage widget, Codex agent session monitor, Codex dynamic
-island, Open Island Codex fork.
+island, Open Island Codex fork, Codex keep awake, macOS prevent sleep.
 
 ---
 

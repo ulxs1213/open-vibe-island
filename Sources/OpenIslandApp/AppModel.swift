@@ -43,6 +43,7 @@ final class AppModel {
     }
 
     let lang = LanguageManager.shared
+    let sleepPrevention = SleepPreventionController()
 
     var state = SessionState() {
         didSet {
@@ -1286,6 +1287,19 @@ final class AppModel {
 
     func toggleSoundMuted() {
         isSoundMuted.toggle()
+    }
+
+    func startSleepPrevention(_ preset: SleepPreventionController.Preset) {
+        if sleepPrevention.start(preset) {
+            lastActionMessage = "Keep awake started."
+        } else {
+            lastActionMessage = sleepPrevention.lastError ?? "Keep awake could not start."
+        }
+    }
+
+    func stopSleepPrevention() {
+        sleepPrevention.stop()
+        lastActionMessage = "Keep awake stopped."
     }
 
     func approveFocusedPermission(_ approved: Bool) {

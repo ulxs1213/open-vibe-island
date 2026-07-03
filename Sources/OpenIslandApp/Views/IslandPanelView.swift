@@ -396,6 +396,8 @@ struct IslandPanelView: View {
 
     private var openedHeaderButtons: some View {
         HStack(spacing: Self.headerControlSpacing) {
+            keepAwakeMenu
+
             headerIconButton(
                 systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                 tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)
@@ -414,6 +416,68 @@ struct IslandPanelView: View {
             ) {
                 showingQuitConfirmation = true
             }
+        }
+    }
+
+    private var keepAwakeMenu: some View {
+        Menu {
+            if model.sleepPrevention.isActive {
+                Text(keepAwakeStatusText)
+
+                Button(role: .destructive) {
+                    model.stopSleepPrevention()
+                } label: {
+                    Label(lang.t("island.keepAwake.stop"), systemImage: "stop.circle")
+                }
+
+                Divider()
+            }
+
+            ForEach(SleepPreventionController.presets) { preset in
+                Button {
+                    model.startSleepPrevention(preset)
+                } label: {
+                    Label(keepAwakePresetTitle(preset), systemImage: "timer")
+                }
+            }
+        } label: {
+            Image(systemName: model.sleepPrevention.isActive ? "cup.and.saucer.fill" : "cup.and.saucer")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(model.sleepPrevention.isActive ? .green.opacity(0.94) : .white.opacity(0.62))
+                .frame(width: Self.headerControlButtonSize, height: Self.headerControlButtonSize)
+                .background(model.sleepPrevention.isActive ? .green.opacity(0.18) : .white.opacity(0.08), in: Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .help(model.sleepPrevention.isActive ? keepAwakeStatusText : lang.t("island.keepAwake.title"))
+        .accessibilityLabel(lang.t("island.keepAwake.title"))
+    }
+
+    private var keepAwakeStatusText: String {
+        if let activeUntil = model.sleepPrevention.activeUntil,
+           let remaining = remainingDurationString(until: activeUntil, now: .now) {
+            return lang.t("island.keepAwake.activeRemaining", remaining)
+        }
+
+        return lang.t("island.keepAwake.activeIndefinite")
+    }
+
+    private func keepAwakePresetTitle(_ preset: SleepPreventionController.Preset) -> String {
+        switch preset.id {
+        case "15m":
+            lang.t("island.keepAwake.15m")
+        case "30m":
+            lang.t("island.keepAwake.30m")
+        case "1h":
+            lang.t("island.keepAwake.1h")
+        case "2h":
+            lang.t("island.keepAwake.2h")
+        case "4h":
+            lang.t("island.keepAwake.4h")
+        case "indefinite":
+            lang.t("island.keepAwake.indefinite")
+        default:
+            preset.id
         }
     }
 

@@ -199,6 +199,16 @@
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
+"island.keepAwake.title" = "Keep awake";
+"island.keepAwake.stop" = "Stop keep awake";
+"island.keepAwake.activeRemaining" = "Awake for %@";
+"island.keepAwake.activeIndefinite" = "Awake until stopped";
+"island.keepAwake.15m" = "15 minutes";
+"island.keepAwake.30m" = "30 minutes";
+"island.keepAwake.1h" = "1 hour";
+"island.keepAwake.2h" = "2 hours";
+"island.keepAwake.4h" = "4 hours";
+"island.keepAwake.indefinite" = "Until stopped";
 
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "Tool permission requested";

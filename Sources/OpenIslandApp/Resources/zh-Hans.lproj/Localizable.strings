@@ -199,6 +199,16 @@
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
+"island.keepAwake.title" = "保持唤醒";
+"island.keepAwake.stop" = "停止保持唤醒";
+"island.keepAwake.activeRemaining" = "还会唤醒 %@";
+"island.keepAwake.activeIndefinite" = "保持唤醒直到手动停止";
+"island.keepAwake.15m" = "15 分钟";
+"island.keepAwake.30m" = "30 分钟";
+"island.keepAwake.1h" = "1 小时";
+"island.keepAwake.2h" = "2 小时";
+"island.keepAwake.4h" = "4 小时";
+"island.keepAwake.indefinite" = "直到手动停止";
 
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "请求工具权限";

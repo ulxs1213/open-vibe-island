@@ -105,6 +105,21 @@ This branch intentionally optimizes for a Codex-only workflow:
 - No personal quota values, local user paths, Codex account ids, or generated
   app bundles are committed by this branch.
 
+### 7. Timed Keep-Awake Control
+
+- Added a local keep-awake menu beside the expanded island sound/settings/quit
+  controls.
+- Presets cover 15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, and until
+  manually stopped.
+- The implementation uses Apple's public IOKit power assertion APIs:
+  `PreventUserIdleSystemSleep` and `PreventUserIdleDisplaySleep`.
+- No Amphetamine proprietary app code is bundled or copied. Amphetamine's public
+  GitHub resources are not the main app source, so this branch implements the
+  same class of behavior through documented macOS APIs.
+- The feature prevents idle system sleep and idle display sleep while active.
+  macOS may still sleep for lid-close, Apple menu sleep, low battery, or other
+  non-idle reasons enforced by the system.
+
 ## Changed Source Areas
 
 - `Sources/OpenIslandCore/CodexAppServer.swift`
@@ -128,9 +143,11 @@ This branch intentionally optimizes for a Codex-only workflow:
   - Refreshes Codex discovery and preserves thread identity.
 - `Sources/OpenIslandApp/AgentSession+Presentation.swift`
   - Presents project plus conversation names and runtime badges.
+- `Sources/OpenIslandApp/SleepPreventionController.swift`
+  - Creates and releases timed macOS power assertions for the keep-awake menu.
 - `Sources/OpenIslandApp/Views/IslandPanelView.swift`
   - Implements closed and expanded quota display, hidden labels, notch-aware
-    layout, and moved header controls.
+    layout, moved header controls, and the keep-awake preset menu.
 - `Sources/OpenIslandApp/Views/V6NotchContent.swift`
   - Adds a left closed-notch status area for Codex remaining quota.
 - `Tests/OpenIslandCoreTests/CodexSessionTrackingTests.swift`
@@ -144,11 +161,13 @@ Codex usage island, Codex quota countdown, Codex remaining usage, Codex rate
 limit reset, OpenAI Codex macOS notch, Codex Desktop usage widget, Codex agent
 session monitor, Open Island Codex fork, Codex dynamic island, Codex status bar,
 Codex 5 hour quota, Codex 7 day quota, Codex app-server account rate limits,
-AI coding agent notch widget, macOS notch Codex monitor.
+AI coding agent notch widget, macOS notch Codex monitor, Codex keep awake,
+Codex prevent sleep, macOS IOKit power assertion.
 
 中文关键词：Codex 用量显示、Codex 剩余额度、Codex 刷新倒计时、Codex 刘海工具、
 Codex 桌面版用量、Codex 会话监控、Codex 项目会话名称、Codex 状态栏、
-Open Island Codex 分支、AI 编程助手刘海监控。
+Open Island Codex 分支、AI 编程助手刘海监控、Codex 保持唤醒、Codex 防睡眠、
+macOS 防止睡眠。
 
 ## Safety Notes
 
@@ -158,3 +177,6 @@ Open Island Codex 分支、AI 编程助手刘海监控。
 - It reads local Codex status only from the user's installed Codex environment.
 - The diagnostic probe is designed for local debugging and redacts sensitive
   fields by default.
+- The keep-awake feature uses local macOS power assertions only. It does not
+  require Accessibility access, screen recording, network access, private APIs,
+  or copied Amphetamine source.

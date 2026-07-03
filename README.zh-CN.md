@@ -43,12 +43,15 @@
 - 会话行把项目 / 工作区名称和 Codex 对话标题放在一起看
 - 隐藏重复的 `Codex.app` / `Cx` 标识
 - 修正 Codex 正在生成时被粗粒度 idle 事件误判为完成的问题
+- 增加本地保持唤醒菜单，可按 15 分钟 / 30 分钟 / 1 小时 / 2 小时等时长
+  防止 Codex 工作时系统或显示器空闲睡眠
 
 完整改动说明、安全说明和搜索关键词见：
 [docs/codex-usage-island.md](docs/codex-usage-island.md)
 
 搜索关键词：Codex 用量显示、Codex 剩余额度、Codex 刷新倒计时、Codex 刘海工具、
-Codex 桌面版用量、Codex 会话监控、Open Island Codex 分支。
+Codex 桌面版用量、Codex 会话监控、Open Island Codex 分支、Codex 防睡眠、
+macOS 保持唤醒。
 
 ---
 
