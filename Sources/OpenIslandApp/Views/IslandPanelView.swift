@@ -506,19 +506,25 @@ struct IslandPanelView: View {
                     .padding(.top, 8)
             }
 
+            openedPersistentSessionHeader
+
             if model.shouldShowSessionBootstrapPlaceholder {
                 sessionBootstrapPlaceholder
                     .padding(.horizontal, 18)
-                    .padding(.top, 8)
             } else if model.islandListSessions.isEmpty {
                 emptyState
                     .padding(.horizontal, 18)
-                    .padding(.top, 8)
             } else {
                 sessionList
             }
         }
         .padding(.bottom, 0)
+    }
+
+    private var openedPersistentSessionHeader: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            sessionPanelHeader(referenceDate: context.date)
+        }
     }
 
     /// Persistent hint at the top of the expanded island while no agent
@@ -637,8 +643,6 @@ struct IslandPanelView: View {
                     }
             } else {
                 VStack(spacing: 0) {
-                    sessionPanelHeader(referenceDate: referenceDate)
-
                     ScrollView(.vertical) {
                         sessionRowsContent(referenceDate: referenceDate)
                     }
@@ -655,10 +659,6 @@ struct IslandPanelView: View {
     @ViewBuilder
     private func sessionListContent(referenceDate: Date) -> some View {
         VStack(spacing: 0) {
-            if !isNotificationMode {
-                sessionPanelHeader(referenceDate: referenceDate)
-            }
-
             if isNotificationMode, let session = model.activeIslandCardSession {
                 IslandSessionRow(
                     session: session,
@@ -814,7 +814,6 @@ struct IslandPanelView: View {
 
     private func sessionOverviewItems(referenceDate: Date) -> [SessionOverviewItem] {
         let sessions = model.islandListSessions
-        guard !sessions.isEmpty else { return [] }
 
         let threshold = model.completedStaleThreshold.seconds
         let waiting = sessions.filter(\.phase.requiresAttention).count
