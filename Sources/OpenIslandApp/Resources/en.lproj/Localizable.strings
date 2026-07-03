@@ -200,10 +200,10 @@
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
-"island.keepAwake.title" = "Keep system awake";
+"island.keepAwake.title" = "Keep display and system awake";
 "island.keepAwake.stop" = "Stop keep awake";
-"island.keepAwake.activeRemaining" = "System awake for %@";
-"island.keepAwake.activeIndefinite" = "System awake until stopped";
+"island.keepAwake.activeRemaining" = "Display and system awake for %@";
+"island.keepAwake.activeIndefinite" = "Display and system awake until stopped";
 "island.keepAwake.15m" = "15 minutes";
 "island.keepAwake.30m" = "30 minutes";
 "island.keepAwake.1h" = "1 hour";

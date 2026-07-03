@@ -269,10 +269,13 @@ struct IslandPanelView: View {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
         TimelineView(.periodic(from: Date(), by: closedCodexFiveHourUsageTimelineInterval())) { timeline in
+            let closedUsage = layout == .macbook ? closedCodexFiveHourUsage(now: timeline.date) : nil
+
             V6ClosedPill(
                 mode: model.islandClosedMode,
                 label: layout == .external ? model.islandClosedLabel() : nil,
-                leftStatusText: layout == .macbook ? closedCodexFiveHourUsageText(now: timeline.date) : nil,
+                leftStatusText: closedUsage?.text,
+                leftStatusTint: closedUsage?.tint ?? .green.opacity(0.95),
                 rightSlot: model.islandClosedRightSlotContent(),
                 layout: layout,
                 height: closedNotchHeight,
@@ -332,7 +335,7 @@ struct IslandPanelView: View {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
     }
 
-    private func closedCodexFiveHourUsageText(now: Date) -> String? {
+    private func closedCodexFiveHourUsage(now: Date) -> ClosedCodexUsagePresentation? {
         guard model.showCodexUsage,
               let snapshot = model.codexUsageSnapshot,
               let window = snapshot.windows.first(where: { $0.key == "primary" }),
@@ -348,7 +351,10 @@ struct IslandPanelView: View {
             parts.append(remaining)
         }
 
-        return parts.joined(separator: " ")
+        return ClosedCodexUsagePresentation(
+            text: parts.joined(separator: " "),
+            tint: usageColor(for: window.usedPercentage)
+        )
     }
 
     private func closedCodexFiveHourUsageTimelineInterval(now: Date = .now) -> TimeInterval {
@@ -371,14 +377,22 @@ struct IslandPanelView: View {
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
                 HStack(spacing: 0) {
-                    usageLaneView(providerGroups.left, alignment: .trailing)
+                    usageLaneView(
+                        providerGroups.left,
+                        alignment: .trailing,
+                        hiddenOffsetX: -10
+                    )
                         .frame(width: metrics.leftUsageWidth, alignment: .trailing)
                         .clipped()
 
                     Color.clear
                         .frame(width: metrics.centerGapWidth)
 
-                    usageLaneView(providerGroups.right, alignment: .leading)
+                    usageLaneView(
+                        providerGroups.right,
+                        alignment: .leading,
+                        hiddenOffsetX: 10
+                    )
                         .frame(width: metrics.rightUsageWidth, alignment: .leading)
                         .clipped()
                 }
@@ -1053,19 +1067,37 @@ struct IslandPanelView: View {
     @ViewBuilder
     private func usageLaneView(
         _ providers: [UsageProviderPresentation],
-        alignment: Alignment
+        alignment: Alignment,
+        hiddenOffsetX: CGFloat = 0
     ) -> some View {
         if providers.isEmpty {
             Color.clear
                 .frame(maxWidth: .infinity)
         } else {
+            let laneAnimationKey = usageLaneAnimationKey(for: providers)
+
             ViewThatFits(in: .horizontal) {
                 compactUsageSummaryView(providers, usesShortTitles: false, detailStyle: .full)
                 compactUsageSummaryView(providers, usesShortTitles: true, detailStyle: .compact)
                 compactUsageSummaryView(providers, usesShortTitles: true, detailStyle: .minimal)
             }
             .frame(maxWidth: .infinity, alignment: alignment)
+            .opacity(usesOpenedVisualState ? 1 : 0)
+            .offset(x: usesOpenedVisualState ? 0 : hiddenOffsetX)
+            .animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.42), value: usesOpenedVisualState)
+            .animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.28), value: laneAnimationKey)
         }
+    }
+
+    private func usageLaneAnimationKey(for providers: [UsageProviderPresentation]) -> String {
+        providers.map { provider in
+            let windows = provider.windows.map { window in
+                "\(window.id):\(window.roundedRemainingPercentage):\(window.resetsAt?.timeIntervalSince1970.rounded() ?? 0)"
+            }
+            .joined(separator: ",")
+            return "\(provider.id)[\(windows)]"
+        }
+        .joined(separator: "|")
     }
 
     private func openedHeaderMetrics(for totalWidth: CGFloat) -> OpenedHeaderMetrics {
@@ -1151,7 +1183,9 @@ struct IslandPanelView: View {
         detailStyle: UsageDetailStyle,
         now: Date
     ) -> some View {
-        HStack(spacing: detailStyle.itemSpacing) {
+        let chipTint = usageChipTint(for: provider)
+
+        return HStack(spacing: detailStyle.itemSpacing) {
             if !provider.hidesCompactTitle {
                 Text(usesShortTitle ? provider.shortTitle : provider.title)
                     .font(.system(size: 11, weight: .semibold))
@@ -1164,12 +1198,21 @@ struct IslandPanelView: View {
         }
         .padding(.horizontal, detailStyle.horizontalPadding)
         .padding(.vertical, 4)
-        .background(.white.opacity(0.055), in: Capsule())
+        .background(chipTint.opacity(0.09), in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(.white.opacity(0.06), lineWidth: 1)
+                .strokeBorder(chipTint.opacity(0.32), lineWidth: 1)
         )
         .help(usageHelpText(for: provider, now: now))
+    }
+
+    private func usageChipTint(for provider: UsageProviderPresentation) -> Color {
+        guard let window = provider.peakWindow,
+              window.isPercentageReliable else {
+            return .white.opacity(0.38)
+        }
+
+        return usageColor(for: window.usedPercentage)
     }
 
     private func usageHelpText(for provider: UsageProviderPresentation, now: Date) -> String {
@@ -1400,6 +1443,11 @@ private struct OpenedHeaderMetrics {
     let leftUsageWidth: CGFloat
     let centerGapWidth: CGFloat
     let rightUsageWidth: CGFloat
+}
+
+private struct ClosedCodexUsagePresentation {
+    let text: String
+    let tint: Color
 }
 
 private struct SessionOverviewItem: Identifiable {

@@ -200,10 +200,10 @@
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
-"island.keepAwake.title" = "保持系统唤醒";
+"island.keepAwake.title" = "保持屏幕和系统唤醒";
 "island.keepAwake.stop" = "停止保持唤醒";
-"island.keepAwake.activeRemaining" = "系统还会保持 %@";
-"island.keepAwake.activeIndefinite" = "系统保持唤醒直到手动停止";
+"island.keepAwake.activeRemaining" = "屏幕和系统还会保持 %@";
+"island.keepAwake.activeIndefinite" = "屏幕和系统保持唤醒直到手动停止";
 "island.keepAwake.15m" = "15 分钟";
 "island.keepAwake.30m" = "30 分钟";
 "island.keepAwake.1h" = "1 小时";

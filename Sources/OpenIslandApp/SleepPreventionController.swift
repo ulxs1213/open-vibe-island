@@ -25,6 +25,8 @@ final class SleepPreventionController {
     private(set) var lastError: String?
 
     @ObservationIgnored private var systemAssertionID: IOPMAssertionID = 0
+    @ObservationIgnored private var displayAssertionID: IOPMAssertionID = 0
+    @ObservationIgnored private var userActivityAssertionID: IOPMAssertionID = 0
     @ObservationIgnored private var expiryTask: Task<Void, Never>?
 
     @discardableResult
@@ -44,7 +46,35 @@ final class SleepPreventionController {
             return false
         }
 
+        var newDisplayAssertionID: IOPMAssertionID = 0
+        let displayResult = IOPMAssertionCreateWithName(
+            kIOPMAssertPreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            reason,
+            &newDisplayAssertionID
+        )
+        guard displayResult == kIOReturnSuccess else {
+            IOPMAssertionRelease(newSystemAssertionID)
+            lastError = "Display sleep assertion failed: \(formatIOReturn(displayResult))"
+            return false
+        }
+
+        var newUserActivityAssertionID: IOPMAssertionID = 0
+        let userActivityResult = IOPMAssertionDeclareUserActivity(
+            reason,
+            kIOPMUserActiveLocal,
+            &newUserActivityAssertionID
+        )
+        guard userActivityResult == kIOReturnSuccess else {
+            IOPMAssertionRelease(newDisplayAssertionID)
+            IOPMAssertionRelease(newSystemAssertionID)
+            lastError = "Display wake assertion failed: \(formatIOReturn(userActivityResult))"
+            return false
+        }
+
         systemAssertionID = newSystemAssertionID
+        displayAssertionID = newDisplayAssertionID
+        userActivityAssertionID = newUserActivityAssertionID
         isActive = true
         activePresetID = preset.id
         activeUntil = preset.duration.map { Date().addingTimeInterval($0) }
@@ -79,6 +109,16 @@ final class SleepPreventionController {
         if systemAssertionID != 0 {
             IOPMAssertionRelease(systemAssertionID)
             systemAssertionID = 0
+        }
+
+        if displayAssertionID != 0 {
+            IOPMAssertionRelease(displayAssertionID)
+            displayAssertionID = 0
+        }
+
+        if userActivityAssertionID != 0 {
+            IOPMAssertionRelease(userActivityAssertionID)
+            userActivityAssertionID = 0
         }
     }
 

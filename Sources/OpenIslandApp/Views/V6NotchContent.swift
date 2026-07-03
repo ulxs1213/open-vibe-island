@@ -205,18 +205,60 @@ struct V6CenterLabelView: View {
 
 struct V6ClosedLeftStatusView: View {
     let text: String
+    let tint: Color
+
+    private static let horizontalPadding: CGFloat = 9
+    private static let verticalPadding: CGFloat = 4
+    private static let componentSpacing: CGFloat = 5
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+        let parts = Self.statusParts(for: text)
+
+        HStack(spacing: Self.componentSpacing) {
+            Text(parts.value)
+                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(tint)
+
+            if let countdown = parts.countdown {
+                Text(countdown)
+                    .font(.system(size: 10.8, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(V6Palette.paper.opacity(0.62))
+            }
+        }
+            .padding(.horizontal, Self.horizontalPadding)
+            .padding(.vertical, Self.verticalPadding)
+            .background(tint.opacity(0.09), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(tint.opacity(0.32), lineWidth: 1)
+            )
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .foregroundStyle(V6Palette.paper.opacity(0.9))
     }
 
     static func intrinsicWidth(of text: String) -> CGFloat {
-        text.unicodeScalars.reduce(CGFloat(14)) { width, scalar in
-            width + (scalar.value < 128 ? 6.9 : 12.0)
+        let parts = statusParts(for: text)
+        let valueWidth = visualWidth(of: parts.value, asciiWidth: 6.9)
+        let countdownWidth = parts.countdown.map {
+            Self.componentSpacing + visualWidth(of: $0, asciiWidth: 6.6)
+        } ?? 0
+
+        return (Self.horizontalPadding * 2) + valueWidth + countdownWidth + 2
+    }
+
+    private static func statusParts(for text: String) -> (value: String, countdown: String?) {
+        let pieces = text.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard let value = pieces.first else {
+            return (text, nil)
+        }
+
+        let countdown = pieces.count > 1 ? String(pieces[1]) : nil
+        return (String(value), countdown)
+    }
+
+    private static func visualWidth(of text: String, asciiWidth: CGFloat) -> CGFloat {
+        text.unicodeScalars.reduce(CGFloat.zero) { width, scalar in
+            width + (scalar.value < 128 ? asciiWidth : 12.0)
         }
     }
 }
@@ -230,6 +272,7 @@ struct V6ClosedPill: View {
     var mode: UnifiedBars.Mode
     var label: String?          // suppressed automatically in MacBook layout
     var leftStatusText: String? = nil
+    var leftStatusTint: Color = .green.opacity(0.95)
     var rightSlot: IslandRightSlotContent?
     var layout: V6ClosedLayout
     var height: CGFloat = 32
@@ -328,7 +371,8 @@ struct V6ClosedPill: View {
                         .frame(width: 24, height: 24)
 
                     if let leftStatusText {
-                        V6ClosedLeftStatusView(text: leftStatusText)
+                        V6ClosedLeftStatusView(text: leftStatusText, tint: leftStatusTint)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                 }
                 .padding(.leading, pad)
@@ -349,6 +393,14 @@ struct V6ClosedPill: View {
         }
         .frame(width: outer, height: height)
         .offset(x: (rightReserve - leftReserve) / 2)
+        .animation(
+            .timingCurve(0.4, 0, 0.2, 1, duration: 0.42),
+            value: AnyHashable([
+                AnyHashable(leftStatusText ?? ""),
+                AnyHashable(rightSlot.map(RightSlotKey.init) ?? .none),
+                AnyHashable(mode),
+            ])
+        )
     }
 }
 
