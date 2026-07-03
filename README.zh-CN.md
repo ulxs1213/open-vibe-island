@@ -45,6 +45,7 @@
 - 修正 Codex 正在生成时被粗粒度 idle 事件误判为完成的问题
 - 增加本地保持唤醒菜单，可按 15 分钟 / 30 分钟 / 1 小时 / 2 小时等时长
   防止 Codex 工作时系统或显示器空闲睡眠
+- 关闭上游自动更新，避免你的 Codex 专用版本被普通版本覆盖
 
 完整改动说明、安全说明和搜索关键词见：
 [docs/codex-usage-island.md](docs/codex-usage-island.md)

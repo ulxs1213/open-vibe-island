@@ -165,6 +165,7 @@
 /* Settings - About */
 "settings.about.version" = "版本 %@";
 "settings.about.checkForUpdates" = "检查更新…";
+"settings.about.updatesDisabled" = "此 Codex 分支已关闭更新";
 "settings.about.quitApp" = "退出 Open Island";
 "island.quit.confirmTitle" = "退出 Open Island？";
 "island.quit.confirmAction" = "退出";

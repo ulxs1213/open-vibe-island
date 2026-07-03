@@ -345,17 +345,12 @@ struct AboutSettingsPane: View {
 
             Form {
                 Section {
-                    aboutActionRow(
-                        title: lang.t("settings.about.checkForUpdates"),
-                        systemImage: "arrow.triangle.2.circlepath",
-                        tint: primaryInk,
-                        action: {
-                            model.updateChecker.checkForUpdates()
-                        }
+                    aboutStatusRow(
+                        title: lang.t("settings.about.updatesDisabled"),
+                        systemImage: "lock.shield.fill",
+                        tint: .secondary
                     )
-                    .disabled(!model.updateChecker.canCheckForUpdates)
-                    .opacity(model.updateChecker.canCheckForUpdates ? 1 : 0.55)
-                    .accessibilityIdentifier("settings.about.checkForUpdates")
+                    .accessibilityIdentifier("settings.about.updatesDisabled")
                 }
 
                 Section {
@@ -400,6 +395,25 @@ struct AboutSettingsPane: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func aboutStatusRow(
+        title: String,
+        systemImage: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 18, alignment: .leading)
+
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+
+            Spacer()
+        }
+        .foregroundStyle(tint)
+        .padding(.vertical, 2)
     }
 }
 

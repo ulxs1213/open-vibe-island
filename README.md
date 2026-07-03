@@ -47,6 +47,7 @@ and Codex CLI users:
   coarse idle events
 - a local keep-awake menu can prevent idle system/display sleep for timed
   Codex work sessions
+- upstream auto-updates are disabled so this Codex fork is not overwritten
 
 Full change log, safety notes, and search keywords:
 [docs/codex-usage-island.md](docs/codex-usage-island.md)

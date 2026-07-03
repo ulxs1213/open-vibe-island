@@ -120,6 +120,16 @@ This branch intentionally optimizes for a Codex-only workflow:
   macOS may still sleep for lid-close, Apple menu sleep, low battery, or other
   non-idle reasons enforced by the system.
 
+### 8. Upstream Auto-Update Disabled
+
+- Removed the Sparkle runtime dependency from the Codex fork.
+- The packaged app no longer writes the upstream appcast URL or update public
+  key into `Info.plist`.
+- The Settings > About pane no longer exposes a working "Check for Updates"
+  action; it shows that updates are disabled for this Codex fork.
+- This avoids replacing the local Codex quota, notch layout, session identity,
+  and keep-awake customizations with a generic upstream release.
+
 ## Changed Source Areas
 
 - `Sources/OpenIslandCore/CodexAppServer.swift`
@@ -145,9 +155,15 @@ This branch intentionally optimizes for a Codex-only workflow:
   - Presents project plus conversation names and runtime badges.
 - `Sources/OpenIslandApp/SleepPreventionController.swift`
   - Creates and releases timed macOS power assertions for the keep-awake menu.
+- `Sources/OpenIslandApp/UpdateChecker.swift`
+  - Keeps the update-check call sites as no-ops for this custom Codex branch.
 - `Sources/OpenIslandApp/Views/IslandPanelView.swift`
   - Implements closed and expanded quota display, hidden labels, notch-aware
     layout, moved header controls, and the keep-awake preset menu.
+- `Sources/OpenIslandApp/Views/SettingsView.swift`
+  - Replaces the update action with a disabled-update status row.
+- `scripts/package-app.sh`, `scripts/launch-dev-app.sh`
+  - Stop embedding the upstream appcast URL and Sparkle update metadata.
 - `Sources/OpenIslandApp/Views/V6NotchContent.swift`
   - Adds a left closed-notch status area for Codex remaining quota.
 - `Tests/OpenIslandCoreTests/CodexSessionTrackingTests.swift`
@@ -162,12 +178,12 @@ limit reset, OpenAI Codex macOS notch, Codex Desktop usage widget, Codex agent
 session monitor, Open Island Codex fork, Codex dynamic island, Codex status bar,
 Codex 5 hour quota, Codex 7 day quota, Codex app-server account rate limits,
 AI coding agent notch widget, macOS notch Codex monitor, Codex keep awake,
-Codex prevent sleep, macOS IOKit power assertion.
+Codex prevent sleep, macOS IOKit power assertion, Codex fork no auto update.
 
 中文关键词：Codex 用量显示、Codex 剩余额度、Codex 刷新倒计时、Codex 刘海工具、
 Codex 桌面版用量、Codex 会话监控、Codex 项目会话名称、Codex 状态栏、
 Open Island Codex 分支、AI 编程助手刘海监控、Codex 保持唤醒、Codex 防睡眠、
-macOS 防止睡眠。
+macOS 防止睡眠、Codex 分支关闭自动更新。
 
 ## Safety Notes
 
@@ -180,3 +196,6 @@ macOS 防止睡眠。
 - The keep-awake feature uses local macOS power assertions only. It does not
   require Accessibility access, screen recording, network access, private APIs,
   or copied Amphetamine source.
+- Upstream auto-updates are disabled because a generic release can overwrite
+  this branch's Codex-specific behavior. Review upstream releases manually
+  before cherry-picking changes.

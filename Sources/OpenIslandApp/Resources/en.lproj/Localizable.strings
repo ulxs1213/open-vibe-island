@@ -165,6 +165,7 @@
 /* Settings - About */
 "settings.about.version" = "Version %@";
 "settings.about.checkForUpdates" = "Check for Updates…";
+"settings.about.updatesDisabled" = "Updates disabled for this Codex fork";
 "settings.about.quitApp" = "Quit Open Island";
 "island.quit.confirmTitle" = "Quit Open Island?";
 "island.quit.confirmAction" = "Quit";
