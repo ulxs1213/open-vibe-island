@@ -45,8 +45,8 @@ and Codex CLI users:
 - repeated `Codex.app` / `Cx` labels are hidden
 - running Codex turns are kept running instead of being marked completed by
   coarse idle events
-- a local keep-awake menu can prevent idle system/display sleep for timed
-  Codex work sessions
+- a local keep-awake menu can prevent idle system sleep for timed Codex work
+  sessions while still allowing display sleep
 - upstream auto-updates are disabled so this Codex fork is not overwritten
 
 Full change log, safety notes, and search keywords:

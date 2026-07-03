@@ -200,10 +200,10 @@
 "island.showAll" = "顯示全部 %lld 個工作階段";
 "island.collapseList" = "收起清單";
 "island.usageWaiting" = "等待用量資料";
-"island.keepAwake.title" = "保持喚醒";
+"island.keepAwake.title" = "保持系統喚醒";
 "island.keepAwake.stop" = "停止保持喚醒";
-"island.keepAwake.activeRemaining" = "還會喚醒 %@";
-"island.keepAwake.activeIndefinite" = "保持喚醒直到手動停止";
+"island.keepAwake.activeRemaining" = "系統還會保持 %@";
+"island.keepAwake.activeIndefinite" = "系統保持喚醒直到手動停止";
 "island.keepAwake.15m" = "15 分鐘";
 "island.keepAwake.30m" = "30 分鐘";
 "island.keepAwake.1h" = "1 小時";

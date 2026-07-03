@@ -111,12 +111,13 @@ This branch intentionally optimizes for a Codex-only workflow:
   controls.
 - Presets cover 15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, and until
   manually stopped.
-- The implementation uses Apple's public IOKit power assertion APIs:
-  `PreventUserIdleSystemSleep` and `PreventUserIdleDisplaySleep`.
+- The implementation uses Apple's public IOKit power assertion API:
+  `PreventUserIdleSystemSleep`.
 - No Amphetamine proprietary app code is bundled or copied. Amphetamine's public
   GitHub resources are not the main app source, so this branch implements the
   same class of behavior through documented macOS APIs.
-- The feature prevents idle system sleep and idle display sleep while active.
+- The feature prevents idle system sleep while active, but allows display sleep
+  so the screen or external display can turn off according to macOS settings.
   macOS may still sleep for lid-close, Apple menu sleep, low battery, or other
   non-idle reasons enforced by the system.
 
